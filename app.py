@@ -610,18 +610,11 @@ def main():
                 st.markdown(f"Skor Relevansi: `{row[skor_key]:.2f}`")
                 
                 # --- PERBAIKAN DI SINI ---
-                # Mengganti st.button dengan st.link_button dan tetap menyertakan
-                # tombol terpisah untuk mencatat interaksi.
-                col1, col2 = st.columns([1, 4])
-                with col1:
-                    # Tombol ini mencatat interaksi (klik) dan merefresh halaman
-                    if st.button(f"Catat Interaksi", key=f"record_click_{i}"):
-                        st.session_state.clicked_urls_in_session.append(row['url'])
-                        st.toast("Interaksi Anda telah dicatat untuk sesi ini.")
-                        st.rerun()
-                with col2:
-                    # Tombol ini langsung mengarahkan pengguna ke tautan
-                    st.link_button(f"Buka Tautan", url=row['url'], help="Klik untuk membuka artikel di tab baru.")
+                # Tombol ini akan mencatat interaksi dan kemudian menampilkan tautan dalam toast.
+                if st.button(f"Baca Selengkapnya", key=f"read_more_{i}"):
+                    st.session_state.clicked_urls_in_session.append(row['url'])
+                    st.toast(f"Interaksi Anda telah dicatat. [Buka tautan]({row['url']})", icon="✅")
+                    st.rerun()
                 # --- AKHIR PERBAIKAN ---
 
                 st.markdown("---")
