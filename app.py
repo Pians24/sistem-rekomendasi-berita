@@ -607,13 +607,13 @@ def main():
                 skor_key = 'final_score' if 'final_score' in row else 'similarity'
                 st.markdown(f"Skor Relevansi: `{row[skor_key]:.2f}`")
                 
-                # Perbaikan di sini: Membuat tombol yang mencatat klik dan
-                # menyertakan tautan yang membuka tab baru
-                if st.button(f"Baca Selengkapnya", key=f"read_more_{i}"):
-                    st.session_state.clicked_urls_in_session.append(row['url'])
-                    st.toast("Interaksi Anda telah dicatat.")
-                    st.markdown(f"<a href='{row['url']}' target='_blank'>Buka tautan ini untuk membaca beritanya</a>", unsafe_allow_html=True)
-                    st.rerun()
+                # Perbaikan: Menggunakan st.link_button untuk langsung mengarahkan ke tautan
+                st.link_button(
+                    label="Baca Selengkapnya",
+                    url=row['url'],
+                    help="Klik untuk membaca artikel di tab baru.",
+                    type="secondary"
+                )
 
                 st.markdown("---")
             
