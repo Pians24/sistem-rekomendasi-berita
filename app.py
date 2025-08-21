@@ -274,7 +274,7 @@ def scrape_kompas_fixed(query, max_articles=10):
 
                 if is_relevant(title, query, content):
                     data.append({
-                        "source": get_source_from_url(url),
+                        "source": get_source_from_url(link),
                         "title": title,
                         "description": "",
                         "content": content,
@@ -311,6 +311,7 @@ def scrape_all_sources(query):
 def get_github_client():
     return Github(st.secrets["github_token"])
 
+@st.cache_data(ttl=60)
 def load_history_from_github():
     try:
         g = get_github_client()
@@ -606,12 +607,14 @@ def main():
                 skor_key = 'final_score' if 'final_score' in row else 'similarity'
                 st.markdown(f"Skor Relevansi: `{row[skor_key]:.2f}`")
                 
-                # Tombol ini akan mencatat interaksi dan kemudian menampilkan tautan dalam toast.
+                # Perbaikan di sini: Membuat tombol yang mencatat klik dan
+                # menyertakan tautan yang membuka tab baru
                 if st.button(f"Baca Selengkapnya", key=f"read_more_{i}"):
                     st.session_state.clicked_urls_in_session.append(row['url'])
-                    st.toast(f"Interaksi Anda telah dicatat. [Buka tautan]({row['url']})", icon="✅")
+                    st.toast("Interaksi Anda telah dicatat.")
+                    st.markdown(f"<a href='{row['url']}' target='_blank'>Buka tautan ini untuk membaca beritanya</a>", unsafe_allow_html=True)
                     st.rerun()
-                
+
                 st.markdown("---")
             
             if st.session_state.current_query:
