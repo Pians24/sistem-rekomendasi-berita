@@ -7,7 +7,6 @@ import random
 import requests
 import pandas as pd
 import pytz
-import nltk
 import feedparser
 import webbrowser
 from bs4 import BeautifulSoup
@@ -36,27 +35,25 @@ def get_source_from_url(url):
         return "Kompas"
     return "Tidak Diketahui"
 
+# === RESOURCES: SBERT saja (tanpa NLTK) ===
 @st.cache_resource
 def load_resources():
     try:
-        nltk.data.find('corpora/stopwords')
-    except nltk.downloader.DownloadError:
-        nltk.download('stopwords')
-    
-    stop_words = set(nltk.corpus.stopwords.words('indonesian'))
-    model_sbert = SentenceTransformer('sentence-transformers/all-mpnet-base-v2')
-    return stop_words, model_sbert
+        model_sbert = SentenceTransformer('sentence-transformers/all-mpnet-base-v2')
+    except Exception:
+        # fallback lebih kecil jika model utama gagal diunduh
+        model_sbert = SentenceTransformer('paraphrase-MiniLM-L6-v2')
+    return model_sbert
 
-stop_words, model_sbert = load_resources()
+model_sbert = load_resources()
 
-# 2. Preprocessing Function
+# 2. Preprocessing Function (tanpa stopwords)
 @st.cache_data
 def preprocess_text(text):
     text = text.lower()
-    text = re.sub(r'http\S+|www.\S+', '', text)
-    text = re.sub(r'\W+', ' ', text)
-    text = re.sub(r'\s+', ' ', text).strip()
-    text = ' '.join([word for word in text.split() if word not in stop_words])
+    text = re.sub(r'http\S+|www\.\S+', '', text)   # buang URL
+    # tidak menghapus seluruh non-alfanumerik agar makna judul tetap utuh
+    text = re.sub(r'\s+', ' ', text).strip()       # rapikan spasi
     return text
 
 # 3. Ekstrak waktu
@@ -70,6 +67,8 @@ def extract_datetime_from_title(title):
         "Februari": "02", "Maret": "03", "April": "04", "Juni": "06", "Juli": "07"
     }
     zona = pytz.timezone("Asia/Jakarta")
+
+    # Kompas.com - 08/21/2025, 10:35
     pattern_kompas = r"Kompas\.com\s*-\s*(\d{2})/(\d{2})/(\d{4}),\s*(\d{2}:\d{2})"
     match = re.search(pattern_kompas, title)
     if match:
@@ -79,6 +78,8 @@ def extract_datetime_from_title(title):
             return zona.localize(dt).strftime("%Y-%m-%d %H:%M")
         except:
             pass
+
+    # "Rabu, 21 Agustus 2025 12:30"
     pattern1 = r"(?:\w+, )?(\d{1,2}) (\w+) (\d{4}) (\d{2}:\d{2})"
     match = re.search(pattern1, title)
     if match:
@@ -90,6 +91,8 @@ def extract_datetime_from_title(title):
                 return zona.localize(dt).strftime("%Y-%m-%d %H:%M")
             except:
                 pass
+
+    # "21 Agustus 2025"
     pattern2 = r"(\d{1,2}) (\w+) (\d{4})"
     match = re.search(pattern2, title)
     if match:
@@ -101,6 +104,8 @@ def extract_datetime_from_title(title):
                 return zona.localize(dt).strftime("%Y-%m-%d %H:%M")
             except:
                 pass
+
+    # "21/08/2025, 12:30"
     pattern3 = r"(\d{2})/(\d{2})/(\d{4}), (\d{2}:\d{2})"
     match = re.search(pattern3, title)
     if match:
@@ -110,6 +115,8 @@ def extract_datetime_from_title(title):
             return zona.localize(dt).strftime("%Y-%m-%d %H:%M")
         except:
             pass
+
+    # "5 menit yang lalu" / "2 jam yang lalu"
     pattern4 = r"(\d+)\s+(menit|jam)\s+yang lalu"
     match = re.search(pattern4, title)
     if match:
@@ -120,6 +127,7 @@ def extract_datetime_from_title(title):
             return dt.strftime("%Y-%m-%d %H:%M")
         except:
             pass
+
     return ""
 
 @st.cache_data
@@ -181,11 +189,11 @@ def scrape_cnn_fixed(query, max_results=10):
     results = []
     for feed_url in feed_urls:
         feed = feedparser.parse(feed_url)
-        for entry in feed.entries:
+        for entry in getattr(feed, "entries", []):
             title = entry.title.strip()
             link = entry.link
-            summary = entry.summary.strip()
-            published = entry.published
+            summary = getattr(entry, "summary", "").strip()
+            published = getattr(entry, "published", "")
             combined_text = f"{title} {summary} {link}".lower()
             if query.lower() in combined_text:
                 try:
@@ -205,6 +213,8 @@ def scrape_cnn_fixed(query, max_results=10):
                     break
         if len(results) >= max_results:
             break
+
+    # fallback tag page jika RSS tidak mengandung query
     if not results:
         try:
             tag = query.lower().replace(" ", "-")
@@ -247,20 +257,26 @@ def scrape_kompas_fixed(query, max_articles=10):
                     continue
                 url = a_tag["href"]
                 title = title_tag.get_text(strip=True)
+
+                # ambil isi ringkas untuk konteks
                 time.sleep(random.uniform(1, 2))
                 art_res = requests.get(url, headers=HEADERS, timeout=10)
                 art_soup = BeautifulSoup(art_res.text, "html.parser")
                 content_paras = art_soup.select("div.read__content > p")
                 content = " ".join([p.get_text(strip=True) for p in content_paras])
+
                 time_tag = art_soup.select_one("div.read__time")
                 published = extract_datetime_from_title(time_tag.get_text(strip=True)) if time_tag else ""
-                if not published or published.endswith("00:00"):
-                    url_match = re.search(r"/(\\d{4})/(\\d{2})/(\\d{2})/(\\d{2})(\\d{2})", url)
+
+                # Perbaikan regex: pakai \d (bukan \\d) saat fallback ambil tanggal dari URL
+                if (not published) or published.endswith("00:00"):
+                    url_match = re.search(r"/(\d{4})/(\d{2})/(\d{2})/(\d{2})(\d{2})", url)
                     if url_match:
                         y, m, d, h, mi = url_match.groups()
                         dt = datetime.strptime(f"{y}-{m}-{d} {h}:{mi}", "%Y-%m-%d %H:%M")
                         dt = pytz.timezone("Asia/Jakarta").localize(dt)
                         published = dt.strftime("%Y-%m-%d %H:%M")
+
                 if is_relevant(title, query, content):
                     data.append({
                         "source": get_source_from_url(url),
@@ -348,16 +364,17 @@ def load_interaction_history():
         st.error(f"Gagal memuat riwayat: {e}")
         return pd.DataFrame()
 
-# Perbaikan pada fungsi ini
 def get_recent_queries_by_days(user_id, df, days=3):
     if df.empty or "click_time" not in df.columns:
         return []
     
     df_user = df[df["user_id"] == user_id].copy()
     jakarta_tz = pytz.timezone("Asia/Jakarta")
-    
-    # Konversi click_time ke datetime dengan timezone yang benar
-    df_user["timestamp"] = pd.to_datetime(df_user["click_time"], format="%A, %d %B %Y %H:%M", errors='coerce').dt.tz_localize(jakarta_tz, ambiguous='NaT', nonexistent='NaT')
+    df_user["timestamp"] = pd.to_datetime(
+        df_user["click_time"],
+        format="%A, %d %B %Y %H:%M",
+        errors='coerce'
+    ).dt.tz_localize(jakarta_tz, ambiguous='NaT', nonexistent='NaT')
     
     df_user = df_user.dropna(subset=['timestamp'])
     
@@ -368,19 +385,19 @@ def get_recent_queries_by_days(user_id, df, days=3):
     if recent_df.empty:
         return []
     
-    # Mengambil pasangan query dan timestamp yang unik, lalu mengurutkan
     unique_searches = recent_df[['query', 'timestamp']].drop_duplicates().sort_values('timestamp', ascending=False)
-    
-    # Mengembalikan daftar tuple (query, tanggal yang diformat ulang)
     return list(zip(unique_searches["query"], unique_searches["timestamp"].dt.strftime("%A, %d %B %Y %H:%M")))
 
-# Perbaikan pada fungsi ini
 def get_most_frequent_topics(user_id, df, days=3):
     if df.empty or "click_time" not in df.columns:
         return []
     df_user = df[df["user_id"] == user_id].copy()
     jakarta_tz = pytz.timezone("Asia/Jakarta")
-    df_user["timestamp"] = pd.to_datetime(df_user["click_time"], format="%A, %d %B %Y %H:%M", errors='coerce').dt.tz_localize(jakarta_tz, ambiguous='NaT', nonexistent='NaT')
+    df_user["timestamp"] = pd.to_datetime(
+        df_user["click_time"],
+        format="%A, %d %B %Y %H:%M",
+        errors='coerce'
+    ).dt.tz_localize(jakarta_tz, ambiguous='NaT', nonexistent='NaT')
     df_user = df_user.dropna(subset=['timestamp'])
     
     now = datetime.now(jakarta_tz)
@@ -389,17 +406,14 @@ def get_most_frequent_topics(user_id, df, days=3):
     if recent_df.empty:
         return []
 
-    # Menggunakan Counter untuk menghitung frekuensi setiap query
     query_counts = Counter(recent_df['query'])
-    
-    # Mengurutkan berdasarkan frekuensi (count) secara descending
     sorted_queries = sorted(query_counts.items(), key=lambda item: item[1], reverse=True)
-    
     return sorted_queries
 
 def build_training_data(user_id):
     history_df = load_interaction_history()
-    user_data = [h for h in history_df.to_dict('records') if h.get("user_id") == user_id and "label" in h and h.get("title") and h.get("content")]
+    user_data = [h for h in history_df.to_dict('records')
+                 if h.get("user_id") == user_id and "label" in h and h.get("title") and h.get("content")]
     df = pd.DataFrame(user_data)
     if df.empty or df["label"].nunique() < 2:
         return pd.DataFrame()
@@ -438,20 +452,27 @@ def recommend(df, query, clf, n_per_source=3):
         return pd.DataFrame()
     df = df.copy()
     df.drop_duplicates(subset=['url'], inplace=True)
+
+    # representasi berdasarkan teks apa adanya (tanpa stopwords)
     df["processed"] = df.apply(lambda row: preprocess_text(row['title'] + ' ' + row.get('content', '')), axis=1)
     vec = model_sbert.encode(df["processed"].tolist())
+
+    # simpan vektor sementara agar tidak mismatch setelah dropna
     df['publishedAt_dt'] = pd.to_datetime(df['publishedAt'], errors='coerce')
     df['vec_temp'] = list(vec)
     df = df.dropna(subset=['publishedAt_dt'])
     vec = df['vec_temp'].tolist()
     df = df.drop(columns=['vec_temp'])
+
     if df.empty:
         return pd.DataFrame()
+
     if clf:
         scores = clf.predict_proba(vec)[:, 1]
         df["score"] = scores
         df["bonus"] = df["title"].apply(lambda x: 0.1 if query.lower() in x.lower() else 0)
         df["final_score"] = (df["score"] + df["bonus"]).clip(0, 1)
+
         def top_n(x):
             return x.sort_values(by=['publishedAt_dt', 'final_score'], ascending=[False, False]).head(n_per_source)
         top_n_per_source = df.groupby("source", group_keys=False).apply(top_n, include_groups=False)
@@ -460,6 +481,7 @@ def recommend(df, query, clf, n_per_source=3):
         q_vec = model_sbert.encode([preprocess_text(query)])
         sims = cosine_similarity(q_vec, vec)[0]
         df["similarity"] = sims
+
         def top_n_sim(x):
             return x.sort_values(by=['publishedAt_dt', 'similarity'], ascending=[False, False]).head(n_per_source)
         top_n_per_source = df.groupby("source", group_keys=False).apply(top_n_sim, include_groups=False)
@@ -588,12 +610,15 @@ def main():
                 skor_key = 'final_score' if 'final_score' in row else 'similarity'
                 st.markdown(f"Skor Relevansi: `{row[skor_key]:.2f}`")
                 
+                # Catatan: di cloud, webbrowser.open_new_tab sering tidak bekerja.
+                # Lebih aman gunakan link/button Streamlit.
                 if st.button(f"Baca Selengkapnya", key=f"read_more_{i}"):
                     st.session_state.clicked_urls_in_session.append(row['url'])
-                    webbrowser.open_new_tab(row['url'])
+                    # webbrowser.open_new_tab(row['url'])  # sering tidak bekerja di cloud
                     st.toast("Interaksi Anda telah dicatat untuk sesi ini.")
                     st.rerun()
 
+                st.markdown(f"[Buka tautan]({row['url']})")
                 st.markdown("---")
             
             if st.session_state.current_query:
