@@ -16,12 +16,13 @@ from sklearn.metrics import accuracy_score, precision_score, recall_score, f1_sc
 from sklearn.metrics.pairwise import cosine_similarity
 from sentence_transformers import SentenceTransformer
 from collections import Counter
+from github import Github
+import base64
 
 # --- KONFIGURASI HALAMAN STREAMLIT ---
 st.set_page_config(page_title="Sistem Rekomendasi Berita", layout="wide")
 
 # --- Konfigurasi dan Inisialisasi ---
-HISTORY_FILE = "user_history.json"
 USER_ID = "user_01"
 HEADERS = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:128.0) Gecko/20100101 Firefox/128.0"}
 
@@ -50,9 +51,8 @@ model_sbert = load_resources()
 @st.cache_data
 def preprocess_text(text):
     text = text.lower()
-    text = re.sub(r'http\S+|www\.\S+', '', text)   # buang URL
-    # tidak menghapus seluruh non-alfanumerik agar makna judul tetap utuh
-    text = re.sub(r'\s+', ' ', text).strip()       # rapikan spasi
+    text = re.sub(r'http\S+|www\.\S+', '', text)
+    text = re.sub(r'\s+', ' ', text).strip()
     return text
 
 # 3. Ekstrak waktu
@@ -67,7 +67,6 @@ def extract_datetime_from_title(title):
     }
     zona = pytz.timezone("Asia/Jakarta")
 
-    # Kompas.com - 08/21/2025, 10:35
     pattern_kompas = r"Kompas\.com\s*-\s*(\d{2})/(\d{2})/(\d{4}),\s*(\d{2}:\d{2})"
     match = re.search(pattern_kompas, title)
     if match:
@@ -78,7 +77,6 @@ def extract_datetime_from_title(title):
         except:
             pass
 
-    # "Rabu, 21 Agustus 2025 12:30"
     pattern1 = r"(?:\w+, )?(\d{1,2}) (\w+) (\d{4}) (\d{2}:\d{2})"
     match = re.search(pattern1, title)
     if match:
@@ -91,7 +89,6 @@ def extract_datetime_from_title(title):
             except:
                 pass
 
-    # "21 Agustus 2025"
     pattern2 = r"(\d{1,2}) (\w+) (\d{4})"
     match = re.search(pattern2, title)
     if match:
@@ -104,7 +101,6 @@ def extract_datetime_from_title(title):
             except:
                 pass
 
-    # "21/08/2025, 12:30"
     pattern3 = r"(\d{2})/(\d{2})/(\d{4}), (\d{2}:\d{2})"
     match = re.search(pattern3, title)
     if match:
@@ -115,7 +111,6 @@ def extract_datetime_from_title(title):
         except:
             pass
 
-    # "5 menit yang lalu" / "2 jam yang lalu"
     pattern4 = r"(\d+)\s+(menit|jam)\s+yang lalu"
     match = re.search(pattern4, title)
     if match:
@@ -128,6 +123,7 @@ def extract_datetime_from_title(title):
             pass
 
     return ""
+
 
 @st.cache_data
 def is_relevant(title, query, content="", threshold=0.35):
@@ -309,18 +305,39 @@ def scrape_all_sources(query):
     else:
         return pd.DataFrame()
 
-def save_interaction(user_id, query, all_articles, clicked_urls):
-    if os.path.exists(HISTORY_FILE):
-        try:
-            with open(HISTORY_FILE, "r") as f:
-                history = json.load(f)
-            if not isinstance(history, list):
-                history = []
-        except json.JSONDecodeError:
-            history = []
-    else:
-        history = []
+
+# --- FUNGSI UNTUK GITHUB API ---
+@st.cache_resource(ttl=60)
+def get_github_client():
+    return Github(st.secrets["github_token"])
+
+def load_history_from_github():
+    try:
+        g = get_github_client()
+        repo = g.get_user(st.secrets["repo_owner"]).get_repo(st.secrets["repo_name"])
+        contents = repo.get_contents(st.secrets["file_path"])
+        
+        # GitHub API mengembalikan konten sebagai string base64, jadi harus didecode
+        file_content = contents.decoded_content.decode('utf-8')
+        data = json.loads(file_content)
+        
+        return pd.DataFrame(data) if isinstance(data, list) and data else pd.DataFrame()
+    except Exception as e:
+        st.error(f"Gagal memuat riwayat dari GitHub: {e}")
+        return pd.DataFrame()
+
+def save_interaction_to_github(user_id, query, all_articles, clicked_urls):
+    g = get_github_client()
+    repo = g.get_user(st.secrets["repo_owner"]).get_repo(st.secrets["repo_name"])
     
+    # Baca riwayat yang sudah ada
+    try:
+        contents = repo.get_contents(st.secrets["file_path"])
+        history_str = contents.decoded_content.decode('utf-8')
+        history_list = json.loads(history_str)
+    except Exception:
+        history_list = []
+
     tz = pytz.timezone("Asia/Jakarta")
     now = datetime.now(tz).strftime("%A, %d %B %Y %H:%M")
 
@@ -334,34 +351,16 @@ def save_interaction(user_id, query, all_articles, clicked_urls):
             "click_time": now,
             "label": 1 if row.get('url', '') in clicked_urls else 0
         }
-        history.append(article_log)
+        history_list.append(article_log)
     
-    try:
-        with open(HISTORY_FILE, "w") as f:
-            json.dump(history, f, indent=2)
-    except Exception as e:
-        st.error(f"Gagal menyimpan file riwayat: {e}")
-
-@st.cache_data
-def load_interaction_history():
-    if not os.path.exists(HISTORY_FILE):
-        return pd.DataFrame()
-    try:
-        with open(HISTORY_FILE, "r") as f:
-            data = json.load(f)
-        if not (isinstance(data, list) and all(isinstance(d, dict) for d in data)):
-            return pd.DataFrame()
-        df = pd.DataFrame(data)
-        if 'click_time' not in df.columns:
-            return pd.DataFrame()
-        df['timestamp'] = pd.to_datetime(df['click_time'], errors='coerce', format="%A, %d %B %Y %H:%M")
-        jakarta_tz = pytz.timezone("Asia/Jakarta")
-        df['timestamp'] = df['timestamp'].dt.tz_localize(jakarta_tz, ambiguous='NaT', nonexistent='NaT')
-        df = df.dropna(subset=['timestamp'])
-        return df
-    except Exception as e:
-        st.error(f"Gagal memuat riwayat: {e}")
-        return pd.DataFrame()
+    # Enkode konten yang diperbarui dan unggah ke GitHub
+    updated_content = json.dumps(history_list, indent=2)
+    repo.update_file(
+        st.secrets["file_path"],
+        f"Update history for {query}",
+        updated_content,
+        contents.sha
+    )
 
 def get_recent_queries_by_days(user_id, df, days=3):
     if df.empty or "click_time" not in df.columns:
@@ -410,7 +409,7 @@ def get_most_frequent_topics(user_id, df, days=3):
     return sorted_queries
 
 def build_training_data(user_id):
-    history_df = load_interaction_history()
+    history_df = load_history_from_github()
     user_data = [h for h in history_df.to_dict('records')
                  if h.get("user_id") == user_id and "label" in h and h.get("title") and h.get("content")]
     df = pd.DataFrame(user_data)
@@ -493,14 +492,12 @@ def main():
     if st.sidebar.button("Bersihkan Cache & Muat Ulang"):
         st.cache_data.clear()
         st.cache_resource.clear()
-        if os.path.exists(HISTORY_FILE):
-            os.remove(HISTORY_FILE)
-        st.success("Cache dan riwayat berhasil dibersihkan! Aplikasi akan dimuat ulang.")
+        st.success("Cache berhasil dibersihkan! Aplikasi akan dimuat ulang.")
         time.sleep(1)
         st.rerun()
 
     if 'history' not in st.session_state:
-        st.session_state.history = load_interaction_history()
+        st.session_state.history = load_history_from_github()
     if 'current_search_results' not in st.session_state:
         st.session_state.current_search_results = pd.DataFrame()
     if 'show_results' not in st.session_state:
@@ -580,9 +577,9 @@ def main():
     if st.button("Cari Berita"):
         if search_query:
             if 'current_query' in st.session_state and st.session_state.current_query:
-                save_interaction(USER_ID, st.session_state.current_query, st.session_state.current_recommended_results, st.session_state.clicked_urls_in_session)
-                load_interaction_history.clear()
-                st.session_state.history = load_interaction_history()
+                save_interaction_to_github(USER_ID, st.session_state.current_query, st.session_state.current_recommended_results, st.session_state.clicked_urls_in_session)
+                load_history_from_github.clear()
+                st.session_state.history = load_history_from_github()
             
             with st.spinner('Mengambil berita dan merekomendasikan...'):
                 st.session_state.current_search_results = scrape_all_sources(search_query)
@@ -609,14 +606,12 @@ def main():
                 skor_key = 'final_score' if 'final_score' in row else 'similarity'
                 st.markdown(f"Skor Relevansi: `{row[skor_key]:.2f}`")
                 
-                # --- PERBAIKAN DI SINI ---
                 # Tombol ini akan mencatat interaksi dan kemudian menampilkan tautan dalam toast.
                 if st.button(f"Baca Selengkapnya", key=f"read_more_{i}"):
                     st.session_state.clicked_urls_in_session.append(row['url'])
                     st.toast(f"Interaksi Anda telah dicatat. [Buka tautan]({row['url']})", icon="✅")
                     st.rerun()
-                # --- AKHIR PERBAIKAN ---
-
+                
                 st.markdown("---")
             
             if st.session_state.current_query:
