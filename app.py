@@ -609,15 +609,21 @@ def main():
                 skor_key = 'final_score' if 'final_score' in row else 'similarity'
                 st.markdown(f"Skor Relevansi: `{row[skor_key]:.2f}`")
                 
-                # Catatan: di cloud, webbrowser.open_new_tab sering tidak bekerja.
-                # Lebih aman gunakan link/button Streamlit.
-                if st.button(f"Baca Selengkapnya", key=f"read_more_{i}"):
-                    st.session_state.clicked_urls_in_session.append(row['url'])
-                    # webbrowser.open_new_tab(row['url'])  # sering tidak bekerja di cloud
-                    st.toast("Interaksi Anda telah dicatat untuk sesi ini.")
-                    st.rerun()
+                # --- PERBAIKAN DI SINI ---
+                # Mengganti st.button dengan st.link_button dan tetap menyertakan
+                # tombol terpisah untuk mencatat interaksi.
+                col1, col2 = st.columns([1, 4])
+                with col1:
+                    # Tombol ini mencatat interaksi (klik) dan merefresh halaman
+                    if st.button(f"Catat Interaksi", key=f"record_click_{i}"):
+                        st.session_state.clicked_urls_in_session.append(row['url'])
+                        st.toast("Interaksi Anda telah dicatat untuk sesi ini.")
+                        st.rerun()
+                with col2:
+                    # Tombol ini langsung mengarahkan pengguna ke tautan
+                    st.link_button(f"Buka Tautan", url=row['url'], help="Klik untuk membuka artikel di tab baru.")
+                # --- AKHIR PERBAIKAN ---
 
-                st.markdown(f"[Buka tautan]({row['url']})")
                 st.markdown("---")
             
             if st.session_state.current_query:
