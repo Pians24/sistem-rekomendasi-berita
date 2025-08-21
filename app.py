@@ -607,14 +607,17 @@ def main():
                 skor_key = 'final_score' if 'final_score' in row else 'similarity'
                 st.markdown(f"Skor Relevansi: `{row[skor_key]:.2f}`")
                 
-                # Perbaikan: Menggunakan st.link_button untuk langsung mengarahkan ke tautan
-                st.link_button(
-                    label="Baca Selengkapnya",
-                    url=row['url'],
-                    help="Klik untuk membaca artikel di tab baru.",
-                    type="secondary"
-                )
-
+                # --- Solusi dengan 2 tombol ---
+                col1, col2 = st.columns(2)
+                with col1:
+                    if st.button(f"Catat Interaksi", key=f"record_click_{i}"):
+                        st.session_state.clicked_urls_in_session.append(row['url'])
+                        st.toast("Interaksi Anda telah dicatat untuk sesi ini.")
+                        st.rerun()
+                with col2:
+                    st.link_button(f"Buka Tautan", url=row['url'], help="Klik untuk membuka artikel di tab baru.")
+                # --- Akhir Solusi ---
+                
                 st.markdown("---")
             
             if st.session_state.current_query:
