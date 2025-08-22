@@ -519,7 +519,7 @@ def main():
     else:
         st.sidebar.info("Model belum bisa dilatih karena riwayat tidak mencukupi. Silakan lakukan pencarian dan klik link artikel.")
 
-    st.header("📚 Rekomendasi Berdasarkan Riwayat Terakhir")
+    st.header("📚 Pencarian Berita per Tanggal")
     recent_queries_list = get_recent_queries_by_days(USER_ID, st.session_state.history, days=3)
     if recent_queries_list:
         for q, tanggal in recent_queries_list[:9]:
@@ -545,7 +545,7 @@ def main():
         st.info("📭 Tidak ada riwayat pencarian dalam 3 hari terakhir.")
 
     st.markdown("---")
-    st.header("🔥 Topik Paling Sering Dicari")
+    st.header("🔥 Rekomendasi Berita Hari Ini")
     most_frequent_topics = get_most_frequent_topics(USER_ID, st.session_state.history, days=3)
     if most_frequent_topics:
         q, count = most_frequent_topics[0]
