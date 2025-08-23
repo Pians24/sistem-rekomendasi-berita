@@ -548,6 +548,7 @@ def main():
     else:
         st.sidebar.info("Model belum bisa dilatih karena riwayat tidak mencukupi. Silakan lakukan pencarian dan klik link artikel.")
 
+    # --- PERUBAHAN PADA PENCARIAN PER TANGGAL ---
     st.header("📚 Pencarian Berita per Tanggal")
     grouped_queries = get_queries_grouped_by_date(USER_ID, st.session_state.history, days=3)
 
@@ -571,21 +572,21 @@ def main():
                         for i, row in results.iterrows():
                             source_name = get_source_from_url(row['url'])
                             st.markdown(f"**[{source_name}]** {row['title']}")
-                            st.markdown(f"Waktu: *{row['publishedAt']}*")
+                            st.markdown(f"[Baca Selengkapnya]({row['url']})")
+                            st.write(f"Waktu: *{row['publishedAt']}*")
                             skor_key = 'final_score' if 'final_score' in row else 'similarity'
-                            st.markdown(f"Skor Relevansi: `{row[skor_key]:.2f}`")
-                            st.markdown(f"Link: [Baca Selengkapnya]({row['url']})")
+                            st.write(f"Skor: `{row[skor_key]:.2f}`")
                             st.markdown("---")
     else:
         st.info("📭 Tidak ada riwayat pencarian dalam 3 hari terakhir.")
 
     st.markdown("---")
+    
+    # --- PERUBAHAN PADA REKOMENDASI HARI INI ---
     st.header("🔥 Rekomendasi Berita Hari Ini")
     most_frequent_topics = get_most_frequent_topics(USER_ID, st.session_state.history, days=3)
     if most_frequent_topics:
         q, count = most_frequent_topics[0]
-        # Hapus baris di bawah ini
-        # st.markdown(f"Berdasarkan topik yang paling sering Anda cari: **{q}**")
         with st.spinner('Mencari berita...'):
             df_news = scrape_all_sources(q)
         if df_news.empty:
@@ -598,16 +599,17 @@ def main():
                 for i, row in results.iterrows():
                     source_name = get_source_from_url(row['url'])
                     st.markdown(f"**[{source_name}]** {row['title']}")
-                    st.markdown(f"Waktu: *{row['publishedAt']}*")
+                    st.markdown(f"[Baca Selengkapnya]({row['url']})")
+                    st.write(f"Waktu: *{row['publishedAt']}*")
                     skor_key = 'final_score' if 'final_score' in row else 'similarity'
-                    st.markdown(f"Skor Relevansi: `{row[skor_key]:.2f}`")
-                    st.markdown(f"Link: [Baca Selengkapnya]({row['url']})")
+                    st.write(f"Skor: `{row[skor_key]:.2f}`")
                     st.markdown("---")
     else:
         st.info("🔥 Tidak ada topik yang sering dicari dalam 3 hari terakhir.")
 
     st.markdown("---")
-
+    
+    # --- PERUBAHAN PADA PENCARIAN BERITA ---
     st.header("🔍 Pencarian Berita")
     search_query = st.text_input("Ketik topik berita yang ingin Anda cari:", key="search_input")
 
@@ -639,11 +641,11 @@ def main():
             for i, row in st.session_state.current_recommended_results.iterrows():
                 source_name = get_source_from_url(row['url'])
                 st.markdown(f"**[{source_name}]** {row['title']}")
-                st.markdown(f"Waktu: *{row['publishedAt']}*")
+                st.markdown(f"[Baca Selengkapnya]({row['url']})")
+                st.write(f"Waktu: *{row['publishedAt']}*")
                 skor_key = 'final_score' if 'final_score' in row else 'similarity'
-                st.markdown(f"Skor Relevansi: `{row[skor_key]:.2f}`")
+                st.write(f"Skor: `{row[skor_key]:.2f}`")
                 
-                # --- Solusi dengan 2 tombol ---
                 col1, col2 = st.columns(2)
                 with col1:
                     if st.button(f"Catat Interaksi", key=f"record_click_{i}"):
@@ -652,7 +654,6 @@ def main():
                         st.rerun()
                 with col2:
                     st.link_button(f"Buka Tautan", url=row['url'], help="Klik untuk membuka artikel di tab baru.")
-                # --- Akhir Solusi ---
                 
                 st.markdown("---")
             
