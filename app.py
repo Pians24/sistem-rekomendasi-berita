@@ -616,7 +616,6 @@ def main():
     if st.button("Cari Berita"):
         if search_query:
             if 'current_query' in st.session_state and st.session_state.current_query:
-                # Simpan interaksi sebelumnya
                 save_interaction_to_github(USER_ID, st.session_state.current_query, st.session_state.current_recommended_results, st.session_state.clicked_urls_in_session)
                 load_history_from_github.clear()
                 st.session_state.history = load_history_from_github()
@@ -643,17 +642,25 @@ def main():
                 source_name = get_source_from_url(row['url'])
                 
                 # --- PERUBAHAN UTAMA DI SINI ---
-                # Hapus tombol dan tambahkan st.link_button
-                if st.link_button(f"[{source_name}] {row['title']}", url=row['url'], key=f"link_{i}"):
-                    # Ini adalah logika untuk mencatat klik.
-                    # Perlu diingat, Streamlit tidak akan menjalankan kode di sini karena st.link_button() akan me-rerun aplikasi.
-                    # Tapi kita bisa menggunakan trik session_state
-                    st.session_state.clicked_urls_in_session.append(row['url'])
-                
-                # Tampilkan detail lainnya
+                if 'url' in row and row['url']:
+                    st.markdown(f"**[{source_name}]** {row['title']}")
+                    st.markdown(row['url'])
+                else:
+                    st.markdown(f"**[{source_name}]** {row['title']}")
+                    st.info("Tautan tidak tersedia.")
+
                 st.write(f"Waktu: *{row['publishedAt']}*")
                 skor_key = 'final_score' if 'final_score' in row else 'similarity'
                 st.write(f"Skor: `{row[skor_key]:.2f}`")
+                
+                # Tambahkan tombol untuk mencatat klik yang mengarah ke link
+                key_link = f"link_{i}_{row.get('url', 'no_url')}"
+                if st.button(f"Catat Kunjungan & Buka", key=key_link):
+                    st.session_state.clicked_urls_in_session.append(row['url'])
+                    st.toast("Interaksi Anda telah dicatat untuk sesi ini.")
+                    # Setelah ini, browser akan otomatis mengarah ke link
+                    st.markdown(f"<meta http-equiv='refresh' content='0; url={row['url']}'>", unsafe_allow_html=True)
+                
                 st.markdown("---")
             
             if st.session_state.current_query:
