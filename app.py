@@ -580,12 +580,12 @@ def main():
         st.info("📭 Tidak ada riwayat pencarian dalam 3 hari terakhir.")
 
     st.markdown("---")
-    # --- PERUBAHAN BAGIAN INI ---
     st.header("🔥 Rekomendasi Berita Hari Ini")
     most_frequent_topics = get_most_frequent_topics(USER_ID, st.session_state.history, days=3)
     if most_frequent_topics:
         q, count = most_frequent_topics[0]
-        st.markdown(f"Berdasarkan topik yang paling sering Anda cari: **{q}**")
+        # Hapus baris di bawah ini
+        # st.markdown(f"Berdasarkan topik yang paling sering Anda cari: **{q}**")
         with st.spinner('Mencari berita...'):
             df_news = scrape_all_sources(q)
         if df_news.empty:
@@ -605,7 +605,6 @@ def main():
                     st.markdown("---")
     else:
         st.info("🔥 Tidak ada topik yang sering dicari dalam 3 hari terakhir.")
-    # --- AKHIR PERUBAHAN BAGIAN INI ---
 
     st.markdown("---")
 
