@@ -655,7 +655,7 @@ def main():
                 
                 # Tambahkan tombol untuk mencatat klik yang mengarah ke link
                 key_link = f"link_{i}_{row.get('url', 'no_url')}"
-                if st.button(f"Catat Kunjungan & Buka", key=key_link):
+                if st.button(f"Baca Selengkapnya", key=key_link):
                     st.session_state.clicked_urls_in_session.append(row['url'])
                     st.toast("Interaksi Anda telah dicatat untuk sesi ini.")
                     # Setelah ini, browser akan otomatis mengarah ke link
