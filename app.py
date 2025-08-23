@@ -124,7 +124,6 @@ def extract_datetime_from_title(title):
 
     return ""
 
-
 @st.cache_data
 def is_relevant(title, query, content="", threshold=0.35):
     combined = f"{title} {content}"
@@ -486,6 +485,36 @@ def recommend(df, query, clf, n_per_source=3):
         top_n_per_source = df.groupby("source", group_keys=False).apply(top_n_sim, include_groups=False)
         return top_n_per_source.sort_values(by=['publishedAt_dt', 'similarity'], ascending=[False, False]).reset_index(drop=True)
 
+# --- FUNGSI BARU UNTUK MENGELOMPOKKAN RIWAYAT BERDASARKAN TANGGAL ---
+def get_queries_grouped_by_date(user_id, df, days=3):
+    if df.empty or "click_time" not in df.columns:
+        return {}
+    df_user = df[df["user_id"] == user_id].copy()
+    jakarta_tz = pytz.timezone("Asia/Jakarta")
+    df_user["timestamp"] = pd.to_datetime(
+        df_user["click_time"],
+        format="%A, %d %B %Y %H:%M",
+        errors='coerce'
+    ).dt.tz_localize(jakarta_tz, ambiguous='NaT', nonexistent='NaT')
+    df_user = df_user.dropna(subset=['timestamp'])
+    now = datetime.now(jakarta_tz)
+    cutoff_time = now - timedelta(days=days)
+    recent_df = df_user[df_user["timestamp"] >= cutoff_time].copy()
+    if recent_df.empty:
+        return {}
+    
+    recent_df['date'] = recent_df['timestamp'].dt.strftime('%d %B %Y')
+    grouped_queries = recent_df.groupby('date')['query'].unique().to_dict()
+    
+    sorted_dates = sorted(
+        grouped_queries.keys(), 
+        key=lambda d: datetime.strptime(d, '%d %B %Y'), 
+        reverse=True
+    )
+    
+    ordered_grouped_queries = {date: grouped_queries[date] for date in sorted_dates}
+    return ordered_grouped_queries
+
 def main():
     st.title("📰 Sistem Rekomendasi Berita")
     st.markdown("Aplikasi ini merekomendasikan berita dari Detik, CNN, dan Kompas berdasarkan riwayat pencarian Anda.")
@@ -519,30 +548,38 @@ def main():
     else:
         st.sidebar.info("Model belum bisa dilatih karena riwayat tidak mencukupi. Silakan lakukan pencarian dan klik link artikel.")
 
+    # --- PERUBAHAN BAGIAN INI ---
     st.header("📚 Pencarian Berita per Tanggal")
-    recent_queries_list = get_recent_queries_by_days(USER_ID, st.session_state.history, days=3)
-    if recent_queries_list:
-        for q, tanggal in recent_queries_list[:9]:
-            with st.expander(f"**Topik: {q}** (dicari pada {tanggal})"):
-                with st.spinner('Mencari berita...'):
-                    df_news = scrape_all_sources(q)
-                if df_news.empty:
-                    st.info("❗ Tidak ditemukan berita.")
-                    continue
-                results = recommend(df_news, q, clf, n_per_source=3)
-                if results.empty:
-                    st.info("❗ Tidak ada hasil relevan.")
-                else:
-                    for i, row in results.iterrows():
-                        source_name = get_source_from_url(row['url'])
-                        st.markdown(f"**[{source_name}]** {row['title']}")
-                        st.markdown(f"Waktu: *{row['publishedAt']}*")
-                        skor_key = 'final_score' if 'final_score' in row else 'similarity'
-                        st.markdown(f"Skor Relevansi: `{row[skor_key]:.2f}`")
-                        st.markdown(f"Link: [Baca Selengkapnya]({row['url']})")
-                        st.markdown("---")
+    grouped_queries = get_queries_grouped_by_date(USER_ID, st.session_state.history, days=3)
+
+    if grouped_queries:
+        for date, queries in grouped_queries.items():
+            st.subheader(f"Tanggal {date}")
+            unique_queries = sorted(list(set(queries)))
+            
+            for q in unique_queries:
+                with st.expander(f"- {q}"):
+                    with st.spinner('Mencari berita...'):
+                        df_news = scrape_all_sources(q)
+                    if df_news.empty:
+                        st.info("❗ Tidak ditemukan berita.")
+                        continue
+                    
+                    results = recommend(df_news, q, clf, n_per_source=3)
+                    if results.empty:
+                        st.info("❗ Tidak ada hasil relevan.")
+                    else:
+                        for i, row in results.iterrows():
+                            source_name = get_source_from_url(row['url'])
+                            st.markdown(f"**[{source_name}]** {row['title']}")
+                            st.markdown(f"Waktu: *{row['publishedAt']}*")
+                            skor_key = 'final_score' if 'final_score' in row else 'similarity'
+                            st.markdown(f"Skor Relevansi: `{row[skor_key]:.2f}`")
+                            st.markdown(f"Link: [Baca Selengkapnya]({row['url']})")
+                            st.markdown("---")
     else:
         st.info("📭 Tidak ada riwayat pencarian dalam 3 hari terakhir.")
+    # --- AKHIR PERUBAHAN BAGIAN INI ---
 
     st.markdown("---")
     st.header("🔥 Rekomendasi Berita Hari Ini")
