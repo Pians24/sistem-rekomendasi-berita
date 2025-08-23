@@ -548,7 +548,7 @@ def main():
     else:
         st.sidebar.info("Model belum bisa dilatih karena riwayat tidak mencukupi. Silakan lakukan pencarian dan klik link artikel.")
 
-    # --- PERUBAHAN PADA PENCARIAN PER TANGGAL ---
+    # --- PENCARIAN PER TANGGAL ---
     st.header("📚 Pencarian Berita per Tanggal")
     grouped_queries = get_queries_grouped_by_date(USER_ID, st.session_state.history, days=3)
 
@@ -582,7 +582,7 @@ def main():
 
     st.markdown("---")
     
-    # --- PERUBAHAN PADA REKOMENDASI HARI INI ---
+    # --- REKOMENDASI HARI INI ---
     st.header("🔥 Rekomendasi Berita Hari Ini")
     most_frequent_topics = get_most_frequent_topics(USER_ID, st.session_state.history, days=3)
     if most_frequent_topics:
@@ -609,13 +609,14 @@ def main():
 
     st.markdown("---")
     
-    # --- PERUBAHAN PADA PENCARIAN BERITA ---
+    # --- PENCARIAN BERITA ---
     st.header("🔍 Pencarian Berita")
     search_query = st.text_input("Ketik topik berita yang ingin Anda cari:", key="search_input")
 
     if st.button("Cari Berita"):
         if search_query:
             if 'current_query' in st.session_state and st.session_state.current_query:
+                # Simpan interaksi sebelumnya
                 save_interaction_to_github(USER_ID, st.session_state.current_query, st.session_state.current_recommended_results, st.session_state.clicked_urls_in_session)
                 load_history_from_github.clear()
                 st.session_state.history = load_history_from_github()
@@ -640,21 +641,19 @@ def main():
         else:
             for i, row in st.session_state.current_recommended_results.iterrows():
                 source_name = get_source_from_url(row['url'])
-                st.markdown(f"**[{source_name}]** {row['title']}")
-                st.markdown(row['url'])
+                
+                # --- PERUBAHAN UTAMA DI SINI ---
+                # Hapus tombol dan tambahkan st.link_button
+                if st.link_button(f"[{source_name}] {row['title']}", url=row['url'], key=f"link_{i}"):
+                    # Ini adalah logika untuk mencatat klik.
+                    # Perlu diingat, Streamlit tidak akan menjalankan kode di sini karena st.link_button() akan me-rerun aplikasi.
+                    # Tapi kita bisa menggunakan trik session_state
+                    st.session_state.clicked_urls_in_session.append(row['url'])
+                
+                # Tampilkan detail lainnya
                 st.write(f"Waktu: *{row['publishedAt']}*")
                 skor_key = 'final_score' if 'final_score' in row else 'similarity'
                 st.write(f"Skor: `{row[skor_key]:.2f}`")
-                
-                col1, col2 = st.columns(2)
-                with col1:
-                    if st.button(f"Catat Interaksi", key=f"record_click_{i}"):
-                        st.session_state.clicked_urls_in_session.append(row['url'])
-                        st.toast("Interaksi Anda telah dicatat untuk sesi ini.")
-                        st.rerun()
-                with col2:
-                    st.link_button(f"Buka Tautan", url=row['url'], help="Klik untuk membuka artikel di tab baru.")
-                
                 st.markdown("---")
             
             if st.session_state.current_query:
