@@ -548,7 +548,6 @@ def main():
     else:
         st.sidebar.info("Model belum bisa dilatih karena riwayat tidak mencukupi. Silakan lakukan pencarian dan klik link artikel.")
 
-    # --- PERUBAHAN BAGIAN INI ---
     st.header("📚 Pencarian Berita per Tanggal")
     grouped_queries = get_queries_grouped_by_date(USER_ID, st.session_state.history, days=3)
 
@@ -579,33 +578,34 @@ def main():
                             st.markdown("---")
     else:
         st.info("📭 Tidak ada riwayat pencarian dalam 3 hari terakhir.")
-    # --- AKHIR PERUBAHAN BAGIAN INI ---
 
     st.markdown("---")
+    # --- PERUBAHAN BAGIAN INI ---
     st.header("🔥 Rekomendasi Berita Hari Ini")
     most_frequent_topics = get_most_frequent_topics(USER_ID, st.session_state.history, days=3)
     if most_frequent_topics:
         q, count = most_frequent_topics[0]
-        with st.expander(f"**Topik: {q}**"):
-            with st.spinner('Mencari berita...'):
-                df_news = scrape_all_sources(q)
-            if df_news.empty:
-                st.info("❗ Tidak ditemukan berita.")
+        st.markdown(f"Berdasarkan topik yang paling sering Anda cari: **{q}**")
+        with st.spinner('Mencari berita...'):
+            df_news = scrape_all_sources(q)
+        if df_news.empty:
+            st.info("❗ Tidak ditemukan berita.")
+        else:
+            results = recommend(df_news, q, clf, n_per_source=1)
+            if results.empty:
+                st.info("❗ Tidak ada hasil relevan.")
             else:
-                results = recommend(df_news, q, clf, n_per_source=1)
-                if results.empty:
-                    st.info("❗ Tidak ada hasil relevan.")
-                else:
-                    for i, row in results.iterrows():
-                        source_name = get_source_from_url(row['url'])
-                        st.markdown(f"**[{source_name}]** {row['title']}")
-                        st.markdown(f"Waktu: *{row['publishedAt']}*")
-                        skor_key = 'final_score' if 'final_score' in row else 'similarity'
-                        st.markdown(f"Skor Relevansi: `{row[skor_key]:.2f}`")
-                        st.markdown(f"Link: [Baca Selengkapnya]({row['url']})")
-                        st.markdown("---")
+                for i, row in results.iterrows():
+                    source_name = get_source_from_url(row['url'])
+                    st.markdown(f"**[{source_name}]** {row['title']}")
+                    st.markdown(f"Waktu: *{row['publishedAt']}*")
+                    skor_key = 'final_score' if 'final_score' in row else 'similarity'
+                    st.markdown(f"Skor Relevansi: `{row[skor_key]:.2f}`")
+                    st.markdown(f"Link: [Baca Selengkapnya]({row['url']})")
+                    st.markdown("---")
     else:
         st.info("🔥 Tidak ada topik yang sering dicari dalam 3 hari terakhir.")
+    # --- AKHIR PERUBAHAN BAGIAN INI ---
 
     st.markdown("---")
 
