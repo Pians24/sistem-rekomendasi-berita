@@ -572,7 +572,7 @@ def main():
                         for i, row in results.iterrows():
                             source_name = get_source_from_url(row['url'])
                             st.markdown(f"**[{source_name}]** {row['title']}")
-                            st.markdown(f"[Baca Selengkapnya]({row['url']})")
+                            st.markdown(row['url'])
                             st.write(f"Waktu: *{row['publishedAt']}*")
                             skor_key = 'final_score' if 'final_score' in row else 'similarity'
                             st.write(f"Skor: `{row[skor_key]:.2f}`")
@@ -599,7 +599,7 @@ def main():
                 for i, row in results.iterrows():
                     source_name = get_source_from_url(row['url'])
                     st.markdown(f"**[{source_name}]** {row['title']}")
-                    st.markdown(f"[Baca Selengkapnya]({row['url']})")
+                    st.markdown(row['url'])
                     st.write(f"Waktu: *{row['publishedAt']}*")
                     skor_key = 'final_score' if 'final_score' in row else 'similarity'
                     st.write(f"Skor: `{row[skor_key]:.2f}`")
@@ -641,7 +641,7 @@ def main():
             for i, row in st.session_state.current_recommended_results.iterrows():
                 source_name = get_source_from_url(row['url'])
                 st.markdown(f"**[{source_name}]** {row['title']}")
-                st.markdown(f"[Baca Selengkapnya]({row['url']})")
+                st.markdown(row['url'])
                 st.write(f"Waktu: *{row['publishedAt']}*")
                 skor_key = 'final_score' if 'final_score' in row else 'similarity'
                 st.write(f"Skor: `{row[skor_key]:.2f}`")
