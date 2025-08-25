@@ -262,7 +262,6 @@ def scrape_kompas_fixed(query, max_articles=10):
                 time_tag = art_soup.select_one("div.read__time")
                 published = extract_datetime_from_title(time_tag.get_text(strip=True)) if time_tag else ""
 
-                # Perbaikan regex: pakai \d (bukan \\d) saat fallback ambil tanggal dari URL
                 if (not published) or published.endswith("00:00"):
                     url_match = re.search(r"/(\d{4})/(\d{2})/(\d{2})/(\d{2})(\d{2})", url)
                     if url_match:
@@ -572,7 +571,8 @@ def main():
                         for i, row in results.iterrows():
                             source_name = get_source_from_url(row['url'])
                             st.markdown(f"**[{source_name}]** {row['title']}")
-                            st.markdown(row['url'])
+                            # Tautan yang bisa dibuka di tab baru
+                            st.markdown(f"[{row['url']}]({row['url']})")
                             st.write(f"Waktu: *{row['publishedAt']}*")
                             skor_key = 'final_score' if 'final_score' in row else 'similarity'
                             st.write(f"Skor: `{row[skor_key]:.2f}`")
@@ -599,7 +599,8 @@ def main():
                 for i, row in results.iterrows():
                     source_name = get_source_from_url(row['url'])
                     st.markdown(f"**[{source_name}]** {row['title']}")
-                    st.markdown(row['url'])
+                    # Tautan yang bisa dibuka di tab baru
+                    st.markdown(f"[{row['url']}]({row['url']})")
                     st.write(f"Waktu: *{row['publishedAt']}*")
                     skor_key = 'final_score' if 'final_score' in row else 'similarity'
                     st.write(f"Skor: `{row[skor_key]:.2f}`")
@@ -613,10 +614,18 @@ def main():
     st.header("🔍 Pencarian Berita")
     search_query = st.text_input("Ketik topik berita yang ingin Anda cari:", key="search_input")
 
+    # Tombol "Cari Berita"
     if st.button("Cari Berita"):
         if search_query:
+            # PENTING: Lacak semua artikel dari sesi sebelumnya di sini
             if 'current_query' in st.session_state and st.session_state.current_query:
-                save_interaction_to_github(USER_ID, st.session_state.current_query, st.session_state.current_recommended_results, st.session_state.clicked_urls_in_session)
+                # Karena tidak ada tombol klik, kita asumsikan semua artikel yang ditampilkan
+                # pada sesi sebelumnya tidak di-klik (label=0).
+                # Ini adalah asumsi yang paling aman untuk mencegah data bias.
+                unclicked_urls = st.session_state.current_recommended_results['url'].tolist()
+                save_interaction_to_github(USER_ID, st.session_state.current_query, st.session_state.current_recommended_results, []) 
+                
+                # Kosongkan cache agar riwayat diperbarui
                 load_history_from_github.clear()
                 st.session_state.history = load_history_from_github()
             
@@ -641,10 +650,12 @@ def main():
             for i, row in st.session_state.current_recommended_results.iterrows():
                 source_name = get_source_from_url(row['url'])
                 
-                # --- PERUBAHAN UTAMA DI SINI ---
                 if 'url' in row and row['url']:
                     st.markdown(f"**[{source_name}]** {row['title']}")
-                    st.markdown(row['url'])
+                    # Menggunakan tautan HTML dengan target="_blank"
+                    st.markdown(f'[{row["url"]}]({row["url"]})')
+                    # Tambahkan tautan yang terlihat seperti tombol untuk UX yang lebih baik
+                    st.markdown(f'<a href="{row["url"]}" target="_blank" style="display:inline-block;padding:8px 16px;font-size:14px;color:white;background-color:#4CAF50;border-radius:5px;text-decoration:none;">Baca Selengkapnya</a>', unsafe_allow_html=True)
                 else:
                     st.markdown(f"**[{source_name}]** {row['title']}")
                     st.info("Tautan tidak tersedia.")
@@ -653,18 +664,10 @@ def main():
                 skor_key = 'final_score' if 'final_score' in row else 'similarity'
                 st.write(f"Skor: `{row[skor_key]:.2f}`")
                 
-                # Tambahkan tombol untuk mencatat klik yang mengarah ke link
-                key_link = f"link_{i}_{row.get('url', 'no_url')}"
-                if st.button(f"Baca Selengkapnya", key=key_link):
-                    st.session_state.clicked_urls_in_session.append(row['url'])
-                    st.toast("Interaksi Anda telah dicatat untuk sesi ini.")
-                    # Setelah ini, browser akan otomatis mengarah ke link
-                    st.markdown(f"<meta http-equiv='refresh' content='0; url={row['url']}'>", unsafe_allow_html=True)
-                
                 st.markdown("---")
             
             if st.session_state.current_query:
-                st.info(f"Anda telah mengklik {len(st.session_state.clicked_urls_in_session)} artikel. Sesi ini akan disimpan saat Anda memulai pencarian baru.")
+                st.info("Anda dapat mengklik tautan atau tombol 'Baca Selengkapnya' di atas untuk membuka di tab baru (gunakan Ctrl+klik untuk lebih cepat). Riwayat interaksi akan disimpan saat Anda melakukan pencarian baru.")
 
 if __name__ == "__main__":
     main()
