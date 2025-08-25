@@ -571,7 +571,6 @@ def main():
                         for i, row in results.iterrows():
                             source_name = get_source_from_url(row['url'])
                             st.markdown(f"**[{source_name}]** {row['title']}")
-                            # Menggunakan tautan HTML dengan target="_blank"
                             st.markdown(f"[{row['url']}]({row['url']})")
                             st.write(f"Waktu: *{row['publishedAt']}*")
                             skor_key = 'final_score' if 'final_score' in row else 'similarity'
@@ -599,7 +598,6 @@ def main():
                 for i, row in results.iterrows():
                     source_name = get_source_from_url(row['url'])
                     st.markdown(f"**[{source_name}]** {row['title']}")
-                    # Menggunakan tautan HTML dengan target="_blank"
                     st.markdown(f"[{row['url']}]({row['url']})")
                     st.write(f"Waktu: *{row['publishedAt']}*")
                     skor_key = 'final_score' if 'final_score' in row else 'similarity'
@@ -614,16 +612,12 @@ def main():
     st.header("🔍 Pencarian Berita")
     search_query = st.text_input("Ketik topik berita yang ingin Anda cari:", key="search_input")
 
-    # Tombol "Cari Berita"
     if st.button("Cari Berita"):
         if search_query:
             if 'current_query' in st.session_state and st.session_state.current_query:
-                # Mengumpulkan semua URL dari hasil yang ditampilkan di sesi sebelumnya sebagai "tidak diklik"
-                unclicked_urls = st.session_state.current_recommended_results['url'].tolist()
-                # Menyimpan interaksi ke GitHub
-                save_interaction_to_github(USER_ID, st.session_state.current_query, st.session_state.current_recommended_results, [])
+                # Menyimpan interaksi dari sesi sebelumnya
+                save_interaction_to_github(USER_ID, st.session_state.current_query, st.session_state.current_recommended_results, st.session_state.clicked_urls_in_session)
                 
-                # Mengosongkan cache agar riwayat diperbarui
                 load_history_from_github.clear()
                 st.session_state.history = load_history_from_github()
             
@@ -634,6 +628,7 @@ def main():
             
             st.session_state.show_results = True
             st.session_state.current_query = search_query
+            # Mengosongkan daftar klik untuk sesi baru
             st.session_state.clicked_urls_in_session = []
             st.rerun()
         else:
@@ -648,22 +643,25 @@ def main():
             for i, row in st.session_state.current_recommended_results.iterrows():
                 source_name = get_source_from_url(row['url'])
                 
-                if 'url' in row and row['url']:
-                    st.markdown(f"**[{source_name}]** {row['title']}")
-                    # Menggunakan tautan HTML dengan target="_blank"
-                    st.markdown(f'<a href="{row["url"]}" target="_blank" style="display:inline-block;padding:8px 16px;font-size:14px;color:white;background-color:#4CAF50;border-radius:5px;text-decoration:none;">Baca Selengkapnya</a>', unsafe_allow_html=True)
-                else:
-                    st.markdown(f"**[{source_name}]** {row['title']}")
-                    st.info("Tautan tidak tersedia.")
-
+                st.markdown(f"**[{source_name}]** {row['title']}")
+                
+                # Tautan untuk membuka artikel
+                st.markdown(f"[{row['url']}]({row['url']})")
+                
                 st.write(f"Waktu: *{row['publishedAt']}*")
                 skor_key = 'final_score' if 'final_score' in row else 'similarity'
                 st.write(f"Skor: `{row[skor_key]:.2f}`")
                 
+                # Tombol terpisah untuk mencatat interaksi
+                key_link = f"link_{i}_{row.get('url', 'no_url')}"
+                if st.button(f"Catat Interaksi", key=key_link):
+                    st.session_state.clicked_urls_in_session.append(row['url'])
+                    st.toast("Interaksi Anda telah dicatat untuk sesi ini.")
+                    
                 st.markdown("---")
             
             if st.session_state.current_query:
-                st.info("Anda dapat mengklik tautan 'Baca Selengkapnya' untuk membuka di tab baru (gunakan Ctrl+klik untuk membuka banyak tab). Riwayat interaksi akan disimpan saat Anda melakukan pencarian baru.")
+                st.info(f"Anda telah mencatat {len(st.session_state.clicked_urls_in_session)} artikel. Data akan disimpan saat Anda memulai pencarian baru.")
 
 if __name__ == "__main__":
     main()
