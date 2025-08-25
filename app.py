@@ -132,7 +132,7 @@ def is_relevant(title, query, content="", threshold=0.35):
     sim = cosine_similarity(combined_vecs, query_vecs)[0][0]
     return sim >= threshold
 
-# 4. Scraper per sumber
+# --- 4. Scraper per sumber (DENGAN PENAMBAHAN AMBIL GAMBAR) ---
 @st.cache_data(show_spinner="Mencari berita di Detik...")
 def scrape_detik(query, max_articles=15):
     url = f"https://www.detik.com/search/searchall?query={query.replace(' ', '+')}"
@@ -147,6 +147,12 @@ def scrape_detik(query, max_articles=15):
                 link = title_tag.a['href'] if title_tag and title_tag.a else ''
                 description_tag = article.find('div', class_='media__desc')
                 date_tag = article.find('div', class_='media__date').find('span') if article.find('div', class_='media__date') else None
+                
+                # --- TAMBAHAN KODE DENGAN try/except UNTUK AMBIL GAMBAR ---
+                image_url = ""
+                image_tag = article.find('img', class_='media__image')
+                if image_tag and 'src' in image_tag.attrs:
+                    image_url = image_tag['src']
                 
                 if not title_tag or not link:
                     continue
@@ -163,7 +169,8 @@ def scrape_detik(query, max_articles=15):
                         "description": description,
                         "content": f"{title} {description}",
                         "url": link,
-                        "publishedAt": published_at
+                        "publishedAt": published_at,
+                        "image_url": image_url
                     })
             except Exception:
                 continue
@@ -189,6 +196,12 @@ def scrape_cnn_fixed(query, max_results=10):
             summary = getattr(entry, "summary", "").strip()
             published = getattr(entry, "published", "")
             combined_text = f"{title} {summary} {link}".lower()
+            
+            # --- TAMBAHAN KODE UNTUK AMBIL GAMBAR DARI RSS ---
+            image_url = ""
+            if hasattr(entry, 'media_content') and entry.media_content:
+                image_url = entry.media_content[0]['url'] if 'url' in entry.media_content[0] else ""
+
             if query.lower() in combined_text:
                 try:
                     dt = datetime.strptime(published, "%a, %d %b %Y %H:%M:%S %z").astimezone(pytz.timezone("Asia/Jakarta"))
@@ -201,7 +214,8 @@ def scrape_cnn_fixed(query, max_results=10):
                     "description": summary,
                     "content": f"{title} {summary}",
                     "url": link,
-                    "publishedAt": published_at
+                    "publishedAt": published_at,
+                    "image_url": image_url # <-- Kolom baru
                 })
                 if len(results) >= max_results:
                     break
@@ -215,20 +229,27 @@ def scrape_cnn_fixed(query, max_results=10):
             tag_url = f"https://www.cnnindonesia.com/tag/{tag}"
             resp = requests.get(tag_url, headers=HEADERS, timeout=10)
             soup = BeautifulSoup(resp.text, "html.parser")
-            items = soup.select("article.list_category .media__title a")
-            for a in items[:max_results]:
-                link = a["href"]
-                title = a.get_text(strip=True)
-                if not link.startswith("http"):
-                    link = "https:" + link
-                results.append({
-                    "source": get_source_from_url(link),
-                    "title": title,
-                    "description": "",
-                    "content": title,
-                    "url": link,
-                    "publishedAt": ""
-                })
+            items = soup.select("article.list_category")
+            for item in items[:max_results]:
+                try:
+                    a_tag = item.select_one(".media__title a")
+                    img_tag = item.select_one(".media_rows_3 img")
+                    link = a_tag["href"]
+                    title = a_tag.get_text(strip=True)
+                    image_url = img_tag["src"] if img_tag else ""
+                    if not link.startswith("http"):
+                        link = "https:" + link
+                    results.append({
+                        "source": get_source_from_url(link),
+                        "title": title,
+                        "description": "",
+                        "content": title,
+                        "url": link,
+                        "publishedAt": "",
+                        "image_url": image_url
+                    })
+                except Exception:
+                    continue
         except Exception as e:
             st.error(f"Gagal scraping dari CNN: {e}")
     return pd.DataFrame(results)
@@ -252,6 +273,12 @@ def scrape_kompas_fixed(query, max_articles=10):
                 url = a_tag["href"]
                 title = title_tag.get_text(strip=True)
 
+                # --- TAMBAHAN KODE UNTUK MENGAMBIL GAMBAR DARI HALAMAN PENCARIAN ---
+                image_url = ""
+                img_tag = item.select_one("div.articleImg img")
+                if img_tag and 'src' in img_tag.attrs:
+                    image_url = img_tag['src']
+                
                 # ambil isi ringkas untuk konteks
                 time.sleep(random.uniform(1, 2))
                 art_res = requests.get(url, headers=HEADERS, timeout=10)
@@ -262,7 +289,6 @@ def scrape_kompas_fixed(query, max_articles=10):
                 time_tag = art_soup.select_one("div.read__time")
                 published = extract_datetime_from_title(time_tag.get_text(strip=True)) if time_tag else ""
 
-                # Perbaikan regex: pakai \d (bukan \\d) saat fallback ambil tanggal dari URL
                 if (not published) or published.endswith("00:00"):
                     url_match = re.search(r"/(\d{4})/(\d{2})/(\d{2})/(\d{2})(\d{2})", url)
                     if url_match:
@@ -278,7 +304,8 @@ def scrape_kompas_fixed(query, max_articles=10):
                         "description": "",
                         "content": content,
                         "url": url,
-                        "publishedAt": published
+                        "publishedAt": published,
+                        "image_url": image_url # <-- Kolom baru
                     })
             except Exception:
                 continue
@@ -317,7 +344,6 @@ def load_history_from_github():
         repo = g.get_user(st.secrets["repo_owner"]).get_repo(st.secrets["repo_name"])
         contents = repo.get_contents(st.secrets["file_path"])
         
-        # GitHub API mengembalikan konten sebagai string base64, jadi harus didecode
         file_content = contents.decoded_content.decode('utf-8')
         data = json.loads(file_content)
         
@@ -330,7 +356,6 @@ def save_interaction_to_github(user_id, query, all_articles, clicked_urls):
     g = get_github_client()
     repo = g.get_user(st.secrets["repo_owner"]).get_repo(st.secrets["repo_name"])
     
-    # Baca riwayat yang sudah ada
     try:
         contents = repo.get_contents(st.secrets["file_path"])
         history_str = contents.decoded_content.decode('utf-8')
@@ -353,7 +378,6 @@ def save_interaction_to_github(user_id, query, all_articles, clicked_urls):
         }
         history_list.append(article_log)
     
-    # Enkode konten yang diperbarui dan unggah ke GitHub
     updated_content = json.dumps(history_list, indent=2)
     repo.update_file(
         st.secrets["file_path"],
@@ -451,11 +475,9 @@ def recommend(df, query, clf, n_per_source=3):
     df = df.copy()
     df.drop_duplicates(subset=['url'], inplace=True)
 
-    # representasi berdasarkan teks apa adanya (tanpa stopwords)
     df["processed"] = df.apply(lambda row: preprocess_text(row['title'] + ' ' + row.get('content', '')), axis=1)
     vec = model_sbert.encode(df["processed"].tolist())
 
-    # simpan vektor sementara agar tidak mismatch setelah dropna
     df['publishedAt_dt'] = pd.to_datetime(df['publishedAt'], errors='coerce')
     df['vec_temp'] = list(vec)
     df = df.dropna(subset=['publishedAt_dt'])
@@ -571,11 +593,23 @@ def main():
                     else:
                         for i, row in results.iterrows():
                             source_name = get_source_from_url(row['url'])
-                            st.markdown(f"**[{source_name}]** {row['title']}")
-                            st.markdown(row['url'])
-                            st.write(f"Waktu: *{row['publishedAt']}*")
-                            skor_key = 'final_score' if 'final_score' in row else 'similarity'
-                            st.write(f"Skor: `{row[skor_key]:.2f}`")
+                            # Perbaikan: Cek kolom image_url sebelum menampilkan
+                            if 'image_url' in row and row['image_url']:
+                                col1, col2 = st.columns([1, 4])
+                                with col1:
+                                    st.image(row['image_url'], width=150)
+                                with col2:
+                                    st.markdown(f"**[{source_name}]** {row['title']}")
+                                    st.markdown(row['url'])
+                                    st.write(f"Waktu: *{row['publishedAt']}*")
+                                    skor_key = 'final_score' if 'final_score' in row else 'similarity'
+                                    st.write(f"Skor: `{row[skor_key]:.2f}`")
+                            else:
+                                st.markdown(f"**[{source_name}]** {row['title']}")
+                                st.markdown(row['url'])
+                                st.write(f"Waktu: *{row['publishedAt']}*")
+                                skor_key = 'final_score' if 'final_score' in row else 'similarity'
+                                st.write(f"Skor: `{row[skor_key]:.2f}`")
                             st.markdown("---")
     else:
         st.info("📭 Tidak ada riwayat pencarian dalam 3 hari terakhir.")
@@ -598,11 +632,23 @@ def main():
             else:
                 for i, row in results.iterrows():
                     source_name = get_source_from_url(row['url'])
-                    st.markdown(f"**[{source_name}]** {row['title']}")
-                    st.markdown(row['url'])
-                    st.write(f"Waktu: *{row['publishedAt']}*")
-                    skor_key = 'final_score' if 'final_score' in row else 'similarity'
-                    st.write(f"Skor: `{row[skor_key]:.2f}`")
+                    # Perbaikan: Cek kolom image_url sebelum menampilkan
+                    if 'image_url' in row and row['image_url']:
+                        col1, col2 = st.columns([1, 4])
+                        with col1:
+                            st.image(row['image_url'], width=150)
+                        with col2:
+                            st.markdown(f"**[{source_name}]** {row['title']}")
+                            st.markdown(row['url'])
+                            st.write(f"Waktu: *{row['publishedAt']}*")
+                            skor_key = 'final_score' if 'final_score' in row else 'similarity'
+                            st.write(f"Skor: `{row[skor_key]:.2f}`")
+                    else:
+                        st.markdown(f"**[{source_name}]** {row['title']}")
+                        st.markdown(row['url'])
+                        st.write(f"Waktu: *{row['publishedAt']}*")
+                        skor_key = 'final_score' if 'final_score' in row else 'similarity'
+                        st.write(f"Skor: `{row[skor_key]:.2f}`")
                     st.markdown("---")
     else:
         st.info("🔥 Tidak ada topik yang sering dicari dalam 3 hari terakhir.")
@@ -642,24 +688,32 @@ def main():
                 source_name = get_source_from_url(row['url'])
                 
                 # --- PERUBAHAN UTAMA DI SINI ---
-                if 'url' in row and row['url']:
-                    st.markdown(f"**[{source_name}]** {row['title']}")
-                    st.markdown(row['url'])
+                if 'image_url' in row and row['image_url']:
+                    col1, col2 = st.columns([1, 4])
+                    with col1:
+                        st.image(row['image_url'], width=150)
+                    with col2:
+                        st.markdown(f"**[{source_name}]** {row['title']}")
+                        st.markdown(row['url'])
+                        st.write(f"Waktu: *{row['publishedAt']}*")
+                        skor_key = 'final_score' if 'final_score' in row else 'similarity'
+                        st.write(f"Skor: `{row[skor_key]:.2f}`")
+                        key_link = f"link_{i}_{row.get('url', 'no_url')}"
+                        if st.button(f"Baca Selengkapnya", key=key_link):
+                            st.session_state.clicked_urls_in_session.append(row['url'])
+                            st.toast("Interaksi Anda telah dicatat untuk sesi ini.")
+                            st.markdown(f"<meta http-equiv='refresh' content='0; url={row['url']}'>", unsafe_allow_html=True)
                 else:
                     st.markdown(f"**[{source_name}]** {row['title']}")
-                    st.info("Tautan tidak tersedia.")
-
-                st.write(f"Waktu: *{row['publishedAt']}*")
-                skor_key = 'final_score' if 'final_score' in row else 'similarity'
-                st.write(f"Skor: `{row[skor_key]:.2f}`")
-                
-                # Tambahkan tombol untuk mencatat klik yang mengarah ke link
-                key_link = f"link_{i}_{row.get('url', 'no_url')}"
-                if st.button(f"Baca Selengkapnya", key=key_link):
-                    st.session_state.clicked_urls_in_session.append(row['url'])
-                    st.toast("Interaksi Anda telah dicatat untuk sesi ini.")
-                    # Setelah ini, browser akan otomatis mengarah ke link
-                    st.markdown(f"<meta http-equiv='refresh' content='0; url={row['url']}'>", unsafe_allow_html=True)
+                    st.markdown(row['url'])
+                    st.write(f"Waktu: *{row['publishedAt']}*")
+                    skor_key = 'final_score' if 'final_score' in row else 'similarity'
+                    st.write(f"Skor: `{row[skor_key]:.2f}`")
+                    key_link = f"link_{i}_{row.get('url', 'no_url')}"
+                    if st.button(f"Baca Selengkapnya", key=key_link):
+                        st.session_state.clicked_urls_in_session.append(row['url'])
+                        st.toast("Interaksi Anda telah dicatat untuk sesi ini.")
+                        st.markdown(f"<meta http-equiv='refresh' content='0; url={row['url']}'>", unsafe_allow_html=True)
                 
                 st.markdown("---")
             
