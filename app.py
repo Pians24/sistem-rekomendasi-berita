@@ -571,7 +571,7 @@ def main():
                         for i, row in results.iterrows():
                             source_name = get_source_from_url(row['url'])
                             st.markdown(f"**[{source_name}]** {row['title']}")
-                            # Tautan yang bisa dibuka di tab baru
+                            # Menggunakan tautan HTML dengan target="_blank"
                             st.markdown(f"[{row['url']}]({row['url']})")
                             st.write(f"Waktu: *{row['publishedAt']}*")
                             skor_key = 'final_score' if 'final_score' in row else 'similarity'
@@ -599,7 +599,7 @@ def main():
                 for i, row in results.iterrows():
                     source_name = get_source_from_url(row['url'])
                     st.markdown(f"**[{source_name}]** {row['title']}")
-                    # Tautan yang bisa dibuka di tab baru
+                    # Menggunakan tautan HTML dengan target="_blank"
                     st.markdown(f"[{row['url']}]({row['url']})")
                     st.write(f"Waktu: *{row['publishedAt']}*")
                     skor_key = 'final_score' if 'final_score' in row else 'similarity'
@@ -617,15 +617,13 @@ def main():
     # Tombol "Cari Berita"
     if st.button("Cari Berita"):
         if search_query:
-            # PENTING: Lacak semua artikel dari sesi sebelumnya di sini
             if 'current_query' in st.session_state and st.session_state.current_query:
-                # Karena tidak ada tombol klik, kita asumsikan semua artikel yang ditampilkan
-                # pada sesi sebelumnya tidak di-klik (label=0).
-                # Ini adalah asumsi yang paling aman untuk mencegah data bias.
+                # Mengumpulkan semua URL dari hasil yang ditampilkan di sesi sebelumnya sebagai "tidak diklik"
                 unclicked_urls = st.session_state.current_recommended_results['url'].tolist()
-                save_interaction_to_github(USER_ID, st.session_state.current_query, st.session_state.current_recommended_results, []) 
+                # Menyimpan interaksi ke GitHub
+                save_interaction_to_github(USER_ID, st.session_state.current_query, st.session_state.current_recommended_results, [])
                 
-                # Kosongkan cache agar riwayat diperbarui
+                # Mengosongkan cache agar riwayat diperbarui
                 load_history_from_github.clear()
                 st.session_state.history = load_history_from_github()
             
@@ -653,8 +651,6 @@ def main():
                 if 'url' in row and row['url']:
                     st.markdown(f"**[{source_name}]** {row['title']}")
                     # Menggunakan tautan HTML dengan target="_blank"
-                    st.markdown(f'[{row["url"]}]({row["url"]})')
-                    # Tambahkan tautan yang terlihat seperti tombol untuk UX yang lebih baik
                     st.markdown(f'<a href="{row["url"]}" target="_blank" style="display:inline-block;padding:8px 16px;font-size:14px;color:white;background-color:#4CAF50;border-radius:5px;text-decoration:none;">Baca Selengkapnya</a>', unsafe_allow_html=True)
                 else:
                     st.markdown(f"**[{source_name}]** {row['title']}")
@@ -667,7 +663,7 @@ def main():
                 st.markdown("---")
             
             if st.session_state.current_query:
-                st.info("Anda dapat mengklik tautan atau tombol 'Baca Selengkapnya' di atas untuk membuka di tab baru (gunakan Ctrl+klik untuk lebih cepat). Riwayat interaksi akan disimpan saat Anda melakukan pencarian baru.")
+                st.info("Anda dapat mengklik tautan 'Baca Selengkapnya' untuk membuka di tab baru (gunakan Ctrl+klik untuk membuka banyak tab). Riwayat interaksi akan disimpan saat Anda melakukan pencarian baru.")
 
 if __name__ == "__main__":
     main()
