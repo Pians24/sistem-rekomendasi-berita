@@ -179,7 +179,7 @@ def scrape_detik(query, max_articles=15):
                 return pd.DataFrame(data)
             else:
                 time.sleep(2)
-        except Exception:
+        except (requests.exceptions.RequestException, Exception):
             time.sleep(2)
     
     return pd.DataFrame()
@@ -195,7 +195,7 @@ def scrape_cnn_fixed(query, max_results=10):
     
     for feed_url in feed_urls:
         try:
-            feed = feedparser.parse(feed_url)
+            feed = feedparser.parse(feed_url, timeout=10)
             if feed.entries:
                 for entry in feed.entries:
                     title = entry.title.strip()
@@ -284,7 +284,7 @@ def scrape_kompas_fixed(query, max_articles=10):
                 return pd.DataFrame(data)
             else:
                 time.sleep(2)
-        except Exception:
+        except (requests.exceptions.RequestException, Exception):
             time.sleep(2)
     
     return pd.DataFrame()
@@ -377,132 +377,12 @@ def get_recent_queries_by_days(user_id, df, days=3):
     
     now = datetime.now(jakarta_tz)
     cutoff_time = now - timedelta(days=days)
-    recent_df = df_user[df_user["timestamp"] >= cutoff_time]
-    
-    if recent_df.empty:
-        return []
-    
-    unique_searches = recent_df[['query', 'timestamp']].drop_duplicates().sort_values('timestamp', ascending=False)
-    return list(zip(unique_searches["query"], unique_searches["timestamp"].dt.strftime("%A, %d %B %Y %H:%M")))
-
-def get_most_frequent_topics(user_id, df, days=3):
-    if df.empty or "click_time" not in df.columns:
-        return []
-    df_user = df[df["user_id"] == user_id].copy()
-    jakarta_tz = pytz.timezone("Asia/Jakarta")
-    df_user["timestamp"] = pd.to_datetime(
-        df_user["click_time"],
-        format="%A, %d %B %Y %H:%M",
-        errors='coerce'
-    ).dt.tz_localize(jakarta_tz, ambiguous='NaT', nonexistent='NaT')
-    df_user = df_user.dropna(subset=['timestamp'])
-    
-    now = datetime.now(jakarta_tz)
-    cutoff_time = now - timedelta(days=days)
-    recent_df = df_user[df_user["timestamp"] >= cutoff_time]
-    if recent_df.empty:
-        return []
-
-    query_counts = Counter(recent_df['query'])
-    sorted_queries = sorted(query_counts.items(), key=lambda item: item[1], reverse=True)
-    return sorted_queries
-
-def build_training_data(user_id):
-    history_df = load_history_from_github()
-    user_data = [h for h in history_df.to_dict('records')
-                 if h.get("user_id") == user_id and "label" in h and h.get("title") and h.get("content")]
-    df = pd.DataFrame(user_data)
-    if df.empty or df["label"].nunique() < 2:
-        return pd.DataFrame()
-    train = []
-    seen = set()
-    for _, row in df.iterrows():
-        title = str(row.get("title", ""))
-        content = str(row.get("content", ""))
-        text = preprocess_text(title + " " + content)
-        label = int(row.get("label", 0))
-        if text and text not in seen:
-            train.append({"text": text, "label": label})
-            seen.add(text)
-    return pd.DataFrame(train)
-
-@st.cache_resource(show_spinner="Melatih model rekomendasi...")
-def train_model(df_train):
-    X = model_sbert.encode(df_train["text"].tolist())
-    y = df_train["label"].tolist()
-    if len(set(y)) < 2:
-        st.warning("⚠️ Gagal melatih model: hanya ada satu jenis label (perlu klik & tidak klik).")
-        return None
-    X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.3, random_state=42)
-    clf = LogisticRegression(class_weight="balanced", max_iter=1000)
-    clf.fit(X_train, y_train)
-    y_pred = clf.predict(X_test)
-    st.sidebar.markdown("📊 **Evaluasi Model:**")
-    st.sidebar.write(f"- Akurasi: {accuracy_score(y_test, y_pred):.2f}")
-    st.sidebar.write(f"- Precision: {precision_score(y_test, y_pred):.2f}")
-    st.sidebar.write(f"- Recall: {recall_score(y_test, y_pred):.2f}")
-    st.sidebar.write(f"- F1 Score: {f1_score(y_test, y_pred):.2f}")
-    return clf
-
-def recommend(df, query, clf, n_per_source=3):
-    if df.empty:
-        return pd.DataFrame()
-    df = df.copy()
-    df.drop_duplicates(subset=['url'], inplace=True)
-
-    df["processed"] = df.apply(lambda row: preprocess_text(row['title'] + ' ' + row.get('content', '')), axis=1)
-    vec = model_sbert.encode(df["processed"].tolist())
-
-    df['publishedAt_dt'] = pd.to_datetime(df['publishedAt'], errors='coerce')
-    df['vec_temp'] = list(vec)
-    df = df.dropna(subset=['publishedAt_dt'])
-    vec = df['vec_temp'].tolist()
-    df = df.drop(columns=['vec_temp'])
-
-    if df.empty:
-        return pd.DataFrame()
-
-    if clf:
-        scores = clf.predict_proba(vec)[:, 1]
-        df["score"] = scores
-        df["bonus"] = df["title"].apply(lambda x: 0.1 if query.lower() in x.lower() else 0)
-        df["final_score"] = (df["score"] + df["bonus"]).clip(0, 1)
-
-        def top_n(x):
-            return x.sort_values(by=['publishedAt_dt', 'final_score'], ascending=[False, False]).head(n_per_source)
-        top_n_per_source = df.groupby("source", group_keys=False).apply(top_n, include_groups=False)
-        return top_n_per_source.sort_values(by=['publishedAt_dt', 'final_score'], ascending=[False, False]).reset_index(drop=True)
-    else:
-        q_vec = model_sbert.encode([preprocess_text(query)])
-        sims = cosine_similarity(q_vec, vec)[0]
-        df["similarity"] = sims
-
-        def top_n_sim(x):
-            return x.sort_values(by=['publishedAt_dt', 'similarity'], ascending=[False, False]).head(n_per_source)
-        top_n_per_source = df.groupby("source", group_keys=False).apply(top_n_sim, include_groups=False)
-        return top_n_per_source.sort_values(by=['publishedAt_dt', 'similarity'], ascending=[False, False]).reset_index(drop=True)
-
-def get_queries_grouped_by_date(user_id, df, days=3):
-    if df.empty or "click_time" not in df.columns:
-        return {}
-    df_user = df[df["user_id"] == user_id].copy()
-    jakarta_tz = pytz.timezone("Asia/Jakarta")
-    df_user["timestamp"] = pd.to_datetime(
-        df_user["click_time"],
-        format="%A, %d %B %Y %H:%M",
-        errors='coerce'
-    ).dt.tz_localize(jakarta_tz, ambiguous='NaT', nonexistent='NaT')
-    
-    df_user = df_user.dropna(subset=['timestamp'])
-    
-    now = datetime.now(jakarta_tz)
-    cutoff_time = now - timedelta(days=days)
-    recent_df = df_user[df_user["timestamp"] >= cutoff_time]
+    recent_df = df_user[df_user["timestamp"] >= cutoff_time].copy()
     
     if recent_df.empty:
         return {}
     
-    recent_df['date'] = recent_df['timestamp'].dt.strftime('%d %B %Y')
+    recent_df.loc[:, 'date'] = recent_df['timestamp'].dt.strftime('%d %B %Y')
     grouped_queries = recent_df.groupby('date')['query'].unique().to_dict()
     
     sorted_dates = sorted(
