@@ -563,6 +563,7 @@ def main():
                         st.markdown(f"**[{source_name}]** {row['title']}")
                         st.markdown(f"[{row['url']}]({row['url']})")
                         st.write(f"Waktu: *{row['click_time']}*")
+                        # st.write(f"Skor: *{row['score']:.2f}*") # Baris ini dihapus
                         st.markdown("---")
     else:
         st.info("Belum ada riwayat pencarian pada 3 hari terakhir.")
