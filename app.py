@@ -197,41 +197,38 @@ def scrape_cnn_fixed(query, max_results=10):
     
     # --- Coba RSS Feed Dulu, Ini Bagian yang Paling Stabil ---
     for feed_url in feed_urls:
-        for _ in range(2):
-            try:
-                feed = feedparser.parse(feed_url)
-                if feed.entries:
-                    for entry in feed.entries:
-                        title = entry.title.strip()
-                        link = entry.link
-                        summary = getattr(entry, "summary", "").strip()
-                        published = getattr(entry, "published", "")
-                        
-                        published_at = ""
-                        try:
-                            dt = datetime.strptime(published, "%a, %d %b %Y %H:%M:%S %z").astimezone(pytz.timezone("Asia/Jakarta"))
-                            published_at = dt.strftime("%Y-%m-%d %H:%M")
-                        except:
-                            jakarta_tz = pytz.timezone("Asia/Jakarta")
-                            published_at = datetime.now(jakarta_tz).strftime("%Y-%m-%d %H:%M")
+        try:
+            feed = feedparser.parse(feed_url)
+            if feed.entries:
+                for entry in feed.entries:
+                    title = entry.title.strip()
+                    link = entry.link
+                    summary = getattr(entry, "summary", "").strip()
+                    published = getattr(entry, "published", "")
+                    
+                    published_at = ""
+                    try:
+                        dt = datetime.strptime(published, "%a, %d %b %Y %H:%M:%S %z").astimezone(pytz.timezone("Asia/Jakarta"))
+                        published_at = dt.strftime("%Y-%m-%d %H:%M")
+                    except:
+                        jakarta_tz = pytz.timezone("Asia/Jakarta")
+                        published_at = datetime.now(jakarta_tz).strftime("%Y-%m-%d %H:%M")
 
-                        # Gabungkan logika is_relevant di sini
-                        if is_relevant(title, query, summary):
-                            results.append({
-                                "source": get_source_from_url(link),
-                                "title": title,
-                                "description": summary,
-                                "content": f"{title} {summary}",
-                                "url": link,
-                                "publishedAt": published_at
-                            })
-                            if len(results) >= max_results:
-                                return pd.DataFrame(results)
-                    break
-                else:
-                    time.sleep(1)
-            except Exception:
-                time.sleep(1)
+                    # Logika pencarian yang lebih kuat
+                    if is_relevant(title, query, summary):
+                        results.append({
+                            "source": get_source_from_url(link),
+                            "title": title,
+                            "description": summary,
+                            "content": f"{title} {summary}",
+                            "url": link,
+                            "publishedAt": published_at
+                        })
+                        if len(results) >= max_results:
+                            return pd.DataFrame(results)
+        except Exception:
+            # Jika ada error, abaikan dan coba feed berikutnya
+            continue
 
     return pd.DataFrame(results)
 
