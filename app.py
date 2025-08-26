@@ -374,8 +374,8 @@ def get_recent_queries_by_days(user_id, df, days=3):
         errors='coerce'
     )
 
-    # MEMBUANG BARIS DENGAN NILAI NaT (NOT A TIME)
-    # Ini adalah perbaikan utama untuk AttributeError.
+    # Membuang semua baris yang gagal dikonversi (nilai NaT)
+    # Ini adalah perbaikan utama untuk mengatasi AttributeError.
     df_user = df_user.dropna(subset=['timestamp']).copy()
     
     # Jika setelah filtering DataFrame menjadi kosong, kembalikan dict kosong
