@@ -243,8 +243,8 @@ def scrape_cnn_fixed(query, max_results=10):
                 
                 if resp.status_code == 200:
                     soup = BeautifulSoup(resp.text, "html.parser")
-                    # GANTI SELEKTOR DI SINI
-                    articles_elements = soup.select(".list-rows .box_text a.box_text_img")
+                    # GANTI SELEKTOR DI SINI ke yang lebih umum
+                    articles_elements = soup.select("article a[href]:has(h2)")
                     
                     for a in articles_elements:
                         link = a["href"]
