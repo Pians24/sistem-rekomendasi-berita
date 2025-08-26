@@ -371,6 +371,7 @@ def save_interaction_to_github(user_id, query, all_articles, clicked_urls):
             "title": str(row.get('title', '')),
             "url": str(row.get('url', '')),
             "content": str(row.get('content', '')),
+            "source": str(row.get('source', '')), # BARIS INI DITAMBAHKAN
             "click_time": now,
             "label": 1 if row.get('url', '') in clicked_urls else 0
         }
