@@ -120,8 +120,6 @@ def extract_datetime_from_title(title):
             return dt.strftime("%Y-%m-%d %H:%M")
         except:
             pass
-
-    # Mengembalikan None untuk data yang tidak valid
     return None
 
 @st.cache_data
@@ -316,22 +314,7 @@ def load_history_from_github():
         contents = repo.get_contents(st.secrets["file_path"])
         file_content = contents.decoded_content.decode('utf-8')
         data = json.loads(file_content)
-        # Perbaikan: Menambahkan validasi data di sini
-        if isinstance(data, list):
-            valid_data = []
-            for item in data:
-                # Memeriksa apakah item adalah kamus dan memiliki kunci 'click_time'
-                if isinstance(item, dict) and 'click_time' in item:
-                    # Mencoba mengonversi 'click_time' untuk validasi
-                    try:
-                        datetime.strptime(item['click_time'], "%A, %d %B %Y %H:%M")
-                        valid_data.append(item)
-                    except ValueError:
-                        # Abaikan entri yang tidak valid
-                        continue
-            return pd.DataFrame(valid_data) if valid_data else pd.DataFrame()
-        else:
-            return pd.DataFrame()
+        return pd.DataFrame(data) if isinstance(data, list) and data else pd.DataFrame()
     except Exception as e:
         st.error(f"Gagal memuat riwayat dari GitHub: {e}")
         return pd.DataFrame()
@@ -377,8 +360,7 @@ def get_recent_queries_by_days(user_id, df, days=3):
     df_user = df[df["user_id"] == user_id].copy()
     jakarta_tz = pytz.timezone("Asia/Jakarta")
 
-    # Konversi kolom 'click_time' ke datetime, dengan NaT untuk yang gagal.
-    # Baris ini sekarang lebih aman karena load_history_from_github sudah memvalidasi data.
+    # Konversi kolom 'click_time' ke datetime. Nilai yang tidak valid akan menjadi NaT.
     df_user["timestamp"] = pd.to_datetime(
         df_user["click_time"],
         format="%A, %d %B %Y %H:%M",
@@ -404,6 +386,7 @@ def get_recent_queries_by_days(user_id, df, days=3):
     if recent_df.empty:
         return {}
     
+    # Sekarang kolom 'timestamp' sudah pasti bertipe datetime, sehingga .dt aman digunakan.
     recent_df.loc[:, 'date'] = recent_df['timestamp'].dt.strftime('%d %B %Y')
     grouped_queries = recent_df.groupby('date')['query'].unique().to_dict()
 
