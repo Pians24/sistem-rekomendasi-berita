@@ -382,7 +382,7 @@ def get_recent_queries_by_days(user_id, df, days=3):
     if recent_df.empty:
         return {}
     
-    recent_df.loc[:, 'date'] = recent_df['timestamp'].dt.strftime('%d %B %Y') # Perbaikan SettingWithCopyWarning
+    recent_df.loc[:, 'date'] = recent_df['timestamp'].dt.strftime('%d %B %Y')
     grouped_queries = recent_df.groupby('date')['query'].unique().to_dict()
     
     sorted_dates = sorted(
@@ -393,6 +393,243 @@ def get_recent_queries_by_days(user_id, df, days=3):
     
     ordered_grouped_queries = {date: grouped_queries[date] for date in sorted_dates}
     return ordered_grouped_queries
+
+def build_training_data(user_id):
+    history_df = load_history_from_github()
+    user_data = [h for h in history_df.to_dict('records')
+                 if h.get("user_id") == user_id and "label" in h and h.get("title") and h.get("content")]
+    df = pd.DataFrame(user_data)
+    if df.empty or df["label"].nunique() < 2:
+        return pd.DataFrame()
+    train = []
+    seen = set()
+    for _, row in df.iterrows():
+        title = str(row.get("title", ""))
+        content = str(row.get("content", ""))
+        text = preprocess_text(title + " " + content)
+        label = int(row.get("label", 0))
+        if text and text not in seen:
+            train.append({"text": text, "label": label})
+            seen.add(text)
+    return pd.DataFrame(train)
+
+@st.cache_resource(show_spinner="Melatih model rekomendasi...")
+def train_model(df_train):
+    X = model_sbert.encode(df_train["text"].tolist())
+    y = df_train["label"].tolist()
+    if len(set(y)) < 2:
+        st.warning("⚠️ Gagal melatih model: hanya ada satu jenis label (perlu klik & tidak klik).")
+        return None
+    X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.3, random_state=42)
+    clf = LogisticRegression(class_weight="balanced", max_iter=1000)
+    clf.fit(X_train, y_train)
+    y_pred = clf.predict(X_test)
+    st.sidebar.markdown("📊 **Evaluasi Model:**")
+    st.sidebar.write(f"- Akurasi: {accuracy_score(y_test, y_pred):.2f}")
+    st.sidebar.write(f"- Precision: {precision_score(y_test, y_pred):.2f}")
+    st.sidebar.write(f"- Recall: {recall_score(y_test, y_pred):.2f}")
+    st.sidebar.write(f"- F1 Score: {f1_score(y_test, y_pred):.2f}")
+    return clf
+
+def recommend(df, query, clf, n_per_source=3):
+    if df.empty:
+        return pd.DataFrame()
+    df = df.copy()
+    df.drop_duplicates(subset=['url'], inplace=True)
+
+    df["processed"] = df.apply(lambda row: preprocess_text(row['title'] + ' ' + row.get('content', '')), axis=1)
+    vec = model_sbert.encode(df["processed"].tolist())
+
+    df['publishedAt_dt'] = pd.to_datetime(df['publishedAt'], errors='coerce')
+    df['vec_temp'] = list(vec)
+    df = df.dropna(subset=['publishedAt_dt'])
+    vec = df['vec_temp'].tolist()
+    df = df.drop(columns=['vec_temp'])
+
+    if df.empty:
+        return pd.DataFrame()
+
+    if clf:
+        scores = clf.predict_proba(vec)[:, 1]
+        df["score"] = scores
+        df["bonus"] = df["title"].apply(lambda x: 0.1 if query.lower() in x.lower() else 0)
+        df["final_score"] = (df["score"] + df["bonus"]).clip(0, 1)
+
+        def top_n(x):
+            return x.sort_values(by=['publishedAt_dt', 'final_score'], ascending=[False, False]).head(n_per_source)
+        top_n_per_source = df.groupby("source", group_keys=False).apply(top_n, include_groups=False)
+        return top_n_per_source.sort_values(by=['publishedAt_dt', 'final_score'], ascending=[False, False]).reset_index(drop=True)
+    else:
+        q_vec = model_sbert.encode([preprocess_text(query)])
+        sims = cosine_similarity(q_vec, vec)[0]
+        df["similarity"] = sims
+
+        def top_n_sim(x):
+            return x.sort_values(by=['publishedAt_dt', 'similarity'], ascending=[False, False]).head(n_per_source)
+        top_n_per_source = df.groupby("source", group_keys=False).apply(top_n_sim, include_groups=False)
+        return top_n_per_source.sort_values(by=['publishedAt_dt', 'similarity'], ascending=[False, False]).reset_index(drop=True)
+
+# --- FUNGSI UNTUK GITHUB API ---
+@st.cache_resource(ttl=60)
+def get_github_client():
+    return Github(st.secrets["github_token"])
+
+@st.cache_data(ttl=60)
+def load_history_from_github():
+    try:
+        g = get_github_client()
+        repo = g.get_user(st.secrets["repo_owner"]).get_repo(st.secrets["repo_name"])
+        contents = repo.get_contents(st.secrets["file_path"])
+        
+        file_content = contents.decoded_content.decode('utf-8')
+        data = json.loads(file_content)
+        
+        return pd.DataFrame(data) if isinstance(data, list) and data else pd.DataFrame()
+    except Exception as e:
+        st.error(f"Gagal memuat riwayat dari GitHub: {e}")
+        return pd.DataFrame()
+
+def save_interaction_to_github(user_id, query, all_articles, clicked_urls):
+    g = get_github_client()
+    repo = g.get_user(st.secrets["repo_owner"]).get_repo(st.secrets["repo_name"])
+    
+    try:
+        contents = repo.get_contents(st.secrets["file_path"])
+        history_str = contents.decoded_content.decode('utf-8')
+        history_list = json.loads(history_str)
+    except Exception:
+        history_list = []
+
+    tz = pytz.timezone("Asia/Jakarta")
+    now = datetime.now(tz).strftime("%A, %d %B %Y %H:%M")
+
+    for _, row in all_articles.iterrows():
+        article_log = {
+            "user_id": user_id,
+            "query": query,
+            "title": str(row.get('title', '')),
+            "url": str(row.get('url', '')),
+            "content": str(row.get('content', '')),
+            "click_time": now,
+            "label": 1 if row.get('url', '') in clicked_urls else 0
+        }
+        history_list.append(article_log)
+    
+    updated_content = json.dumps(history_list, indent=2)
+    repo.update_file(
+        st.secrets["file_path"],
+        f"Update history for {query}",
+        updated_content,
+        contents.sha
+    )
+
+def get_recent_queries_by_days(user_id, df, days=3):
+    if df.empty or "click_time" not in df.columns:
+        return []
+    
+    df_user = df[df["user_id"] == user_id].copy()
+    jakarta_tz = pytz.timezone("Asia/Jakarta")
+    df_user["timestamp"] = pd.to_datetime(
+        df_user["click_time"],
+        format="%A, %d %B %Y %H:%M",
+        errors='coerce'
+    ).dt.tz_localize(jakarta_tz, ambiguous='NaT', nonexistent='NaT')
+    
+    df_user = df_user.dropna(subset=['timestamp'])
+    
+    now = datetime.now(jakarta_tz)
+    cutoff_time = now - timedelta(days=days)
+    recent_df = df_user[df_user["timestamp"] >= cutoff_time].copy()
+    
+    if recent_df.empty:
+        return {}
+    
+    recent_df.loc[:, 'date'] = recent_df['timestamp'].dt.strftime('%d %B %Y')
+    grouped_queries = recent_df.groupby('date')['query'].unique().to_dict()
+    
+    sorted_dates = sorted(
+        grouped_queries.keys(), 
+        key=lambda d: datetime.strptime(d, '%d %B %Y'), 
+        reverse=True
+    )
+    
+    ordered_grouped_queries = {date: grouped_queries[date] for date in sorted_dates}
+    return ordered_grouped_queries
+
+def build_training_data(user_id):
+    history_df = load_history_from_github()
+    user_data = [h for h in history_df.to_dict('records')
+                 if h.get("user_id") == user_id and "label" in h and h.get("title") and h.get("content")]
+    df = pd.DataFrame(user_data)
+    if df.empty or df["label"].nunique() < 2:
+        return pd.DataFrame()
+    train = []
+    seen = set()
+    for _, row in df.iterrows():
+        title = str(row.get("title", ""))
+        content = str(row.get("content", ""))
+        text = preprocess_text(title + " " + content)
+        label = int(row.get("label", 0))
+        if text and text not in seen:
+            train.append({"text": text, "label": label})
+            seen.add(text)
+    return pd.DataFrame(train)
+
+@st.cache_resource(show_spinner="Melatih model rekomendasi...")
+def train_model(df_train):
+    X = model_sbert.encode(df_train["text"].tolist())
+    y = df_train["label"].tolist()
+    if len(set(y)) < 2:
+        st.warning("⚠️ Gagal melatih model: hanya ada satu jenis label (perlu klik & tidak klik).")
+        return None
+    X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.3, random_state=42)
+    clf = LogisticRegression(class_weight="balanced", max_iter=1000)
+    clf.fit(X_train, y_train)
+    y_pred = clf.predict(X_test)
+    st.sidebar.markdown("📊 **Evaluasi Model:**")
+    st.sidebar.write(f"- Akurasi: {accuracy_score(y_test, y_pred):.2f}")
+    st.sidebar.write(f"- Precision: {precision_score(y_test, y_pred):.2f}")
+    st.sidebar.write(f"- Recall: {recall_score(y_test, y_pred):.2f}")
+    st.sidebar.write(f"- F1 Score: {f1_score(y_test, y_pred):.2f}")
+    return clf
+
+def recommend(df, query, clf, n_per_source=3):
+    if df.empty:
+        return pd.DataFrame()
+    df = df.copy()
+    df.drop_duplicates(subset=['url'], inplace=True)
+
+    df["processed"] = df.apply(lambda row: preprocess_text(row['title'] + ' ' + row.get('content', '')), axis=1)
+    vec = model_sbert.encode(df["processed"].tolist())
+
+    df['publishedAt_dt'] = pd.to_datetime(df['publishedAt'], errors='coerce')
+    df['vec_temp'] = list(vec)
+    df = df.dropna(subset=['publishedAt_dt'])
+    vec = df['vec_temp'].tolist()
+    df = df.drop(columns=['vec_temp'])
+
+    if df.empty:
+        return pd.DataFrame()
+
+    if clf:
+        scores = clf.predict_proba(vec)[:, 1]
+        df["score"] = scores
+        df["bonus"] = df["title"].apply(lambda x: 0.1 if query.lower() in x.lower() else 0)
+        df["final_score"] = (df["score"] + df["bonus"]).clip(0, 1)
+
+        def top_n(x):
+            return x.sort_values(by=['publishedAt_dt', 'final_score'], ascending=[False, False]).head(n_per_source)
+        top_n_per_source = df.groupby("source", group_keys=False).apply(top_n, include_groups=False)
+        return top_n_per_source.sort_values(by=['publishedAt_dt', 'final_score'], ascending=[False, False]).reset_index(drop=True)
+    else:
+        q_vec = model_sbert.encode([preprocess_text(query)])
+        sims = cosine_similarity(q_vec, vec)[0]
+        df["similarity"] = sims
+
+        def top_n_sim(x):
+            return x.sort_values(by=['publishedAt_dt', 'similarity'], ascending=[False, False]).head(n_per_source)
+        top_n_per_source = df.groupby("source", group_keys=False).apply(top_n_sim, include_groups=False)
+        return top_n_per_source.sort_values(by=['publishedAt_dt', 'similarity'], ascending=[False, False]).reset_index(drop=True)
 
 def main():
     st.title("📰 Sistem Rekomendasi Berita")
