@@ -35,7 +35,7 @@ def get_source_from_url(url):
         return "Kompas"
     return "Tidak Diketahui"
 
-# === RESOURCES: SBERT saja (tanpa NLTK) ===
+# === SUMBER DAYA: SBERT saja (tanpa NLTK) ===
 @st.cache_resource
 def load_resources():
     try:
@@ -47,7 +47,7 @@ def load_resources():
 
 model_sbert = load_resources()
 
-# 2. Preprocessing Function (tanpa stopwords)
+# 2. Fungsi Pra-pemrosesan (tanpa stopwords)
 @st.cache_data
 def preprocess_text(text):
     text = text.lower()
@@ -67,7 +67,7 @@ def extract_datetime_from_title(title):
     }
     zona = pytz.timezone("Asia/Jakarta")
 
-    # Kompas style: "Kompas.com - 25/08/2025, 14:12"
+    # Gaya Kompas: "Kompas.com - 25/08/2025, 14:12"
     pattern_kompas = r"Kompas\.com\s*-\s*(\d{2})/(\d{2})/(\d{4}),\s*(\d{2}:\d{2})"
     match = re.search(pattern_kompas, title)
     if match:
@@ -197,7 +197,7 @@ def scrape_cnn_fixed(query, max_results=10):
     results = []
     for feed_url in feed_urls:
         try:
-            # feedparser.parse tidak mendukung timeout param; biarkan default
+            # feedparser.parse tidak mendukung parameter timeout; biarkan default
             feed = feedparser.parse(feed_url)
             if feed.entries:
                 for entry in feed.entries:
@@ -282,6 +282,8 @@ def scrape_kompas_fixed(query, max_articles=10):
                             })
                     except Exception:
                         continue
+                    if len(data) >= max_articles:
+                        break
                 return pd.DataFrame(data)
             else:
                 time.sleep(2)
@@ -358,8 +360,9 @@ def save_interaction_to_github(user_id, query, all_articles, clicked_urls):
         contents.sha
     )
 
+# Memindahkan definisi fungsi ini SEBELUM main()
 def get_recent_queries_by_days(user_id, df, days=3):
-    """Kembalikan dict terurut: { '25 Agustus 2025': ['gempa','pemilu',...], ... }"""
+    """Mengembalikan dict terurut: { '25 Agustus 2025': ['gempa','pemilu',...], ... }"""
     if df.empty or "click_time" not in df.columns:
         return {}
 
@@ -371,12 +374,12 @@ def get_recent_queries_by_days(user_id, df, days=3):
         errors='coerce'
     )
 
-    # Jika masih naive, set tz ke Asia/Jakarta
+    # Jika masih naive, setel zona waktu ke Asia/Jakarta
     if df_user["timestamp"].notna().any():
         try:
             df_user.loc[df_user["timestamp"].notna(), "timestamp"] = df_user.loc[df_user["timestamp"].notna(), "timestamp"].dt.tz_localize(jakarta_tz)
         except TypeError:
-            # Sudah punya tz
+            # Sudah memiliki zona waktu
             df_user["timestamp"] = df_user["timestamp"].dt.tz_convert(jakarta_tz)
 
     df_user = df_user.dropna(subset=['timestamp'])
@@ -400,6 +403,8 @@ def get_recent_queries_by_days(user_id, df, days=3):
     return ordered_grouped_queries
 
 # === ALIAS agar tidak NameError di main() ===
+# Alias ini tidak lagi mutlak diperlukan jika get_recent_queries_by_days dipindahkan.
+# Namun, menyimpannya tidak merugikan dan mempertahankan struktur asli.
 def get_queries_grouped_by_date(user_id, df, days=3):
     return get_recent_queries_by_days(user_id, df, days=days)
 
@@ -409,16 +414,16 @@ def train_model(df_train):
     y = df_train["label"].tolist()
     if len(set(y)) < 2:
         st.warning("⚠️ Gagal melatih model: hanya ada satu jenis label (perlu klik & tidak klik).")
-        return None
+    return None
     X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.3, random_state=42)
     clf = LogisticRegression(class_weight="balanced", max_iter=1000)
     clf.fit(X_train, y_train)
     y_pred = clf.predict(X_test)
     st.sidebar.markdown("📊 **Evaluasi Model:**")
     st.sidebar.write(f"- Akurasi: {accuracy_score(y_test, y_pred):.2f}")
-    st.sidebar.write(f"- Precision: {precision_score(y_test, y_pred):.2f}")
+    st.sidebar.write(f"- Presisi: {precision_score(y_test, y_pred):.2f}")
     st.sidebar.write(f"- Recall: {recall_score(y_test, y_pred):.2f}")
-    st.sidebar.write(f"- F1 Score: {f1_score(y_test, y_pred):.2f}")
+    st.sidebar.write(f"- Skor F1: {f1_score(y_test, y_pred):.2f}")
     return clf
 
 def recommend(df, query, clf, n_per_source=3):
@@ -447,7 +452,7 @@ def recommend(df, query, clf, n_per_source=3):
 
         def top_n(x):
             return x.sort_values(by=['publishedAt_dt', 'final_score'], ascending=[False, False]).head(n_per_source)
-        # HAPUS include_groups (agar kompatibel lintas versi pandas)
+        # Hapus include_groups (agar kompatibel lintas versi pandas)
         top_n_per_source = df.groupby("source", group_keys=False).apply(top_n)
         return top_n_per_source.sort_values(by=['publishedAt_dt', 'final_score'], ascending=[False, False]).reset_index(drop=True)
     else:
@@ -457,9 +462,30 @@ def recommend(df, query, clf, n_per_source=3):
 
         def top_n_sim(x):
             return x.sort_values(by=['publishedAt_dt', 'similarity'], ascending=[False, False]).head(n_per_source)
-        # HAPUS include_groups (agar kompatibel lintas versi pandas)
+        # Hapus include_groups (agar kompatibel lintas versi pandas)
         top_n_per_source = df.groupby("source", group_keys=False).apply(top_n_sim)
         return top_n_per_source.sort_values(by=['publishedAt_dt', 'similarity'], ascending=[False, False]).reset_index(drop=True)
+
+# === DATA PELATIHAN dari riwayat GitHub ===
+def build_training_data(user_id):
+    history_df = load_history_from_github()
+    user_data = [h for h in history_df.to_dict('records')
+                 if h.get("user_id") == user_id and "label" in h and h.get("title") and h.get("content")]
+    df = pd.DataFrame(user_data)
+    if df.empty or df["label"].nunique() < 2:
+        return pd.DataFrame()
+    train = []
+    seen = set()
+    for _, row in df.iterrows():
+        title = str(row.get("title", ""))
+        content = str(row.get("content", ""))
+        text = preprocess_text(title + " " + content)
+        label = int(row.get("label", 0))
+        if text and text not in seen:
+            train.append({"text": text, "label": label})
+            seen.add(text)
+    return pd.DataFrame(train)
+
 
 def main():
     st.title("📰 Sistem Rekomendasi Berita")
@@ -492,7 +518,7 @@ def main():
         st.sidebar.success("Model berhasil dilatih.")
         clf = train_model(df_train)
     else:
-        st.sidebar.info("Model belum bisa dilatih karena riwayat tidak mencukupi. Silakan lakukan pencarian dan klik link artikel.")
+        st.sidebar.info("Model belum bisa dilatih karena riwayat tidak mencukupi. Silakan lakukan pencarian dan klik tautan artikel.")
 
     # --- PENCARIAN PER TANGGAL ---
     st.header("📚 Pencarian Berita per Tanggal")
@@ -513,6 +539,7 @@ def main():
                     results = recommend(df_news, q, clf, n_per_source=3)
                     if results.empty:
                         st.info("❗ Tidak ada hasil relevan.")
+                        continue
                     else:
                         for i, row in results.iterrows():
                             source_name = get_source_from_url(row['url'])
@@ -537,25 +564,6 @@ def main():
     else:
         st.info("Belum ada riwayat pencarian pada 3 hari terakhir.")
 
-# === DATA TRAINING dari GitHub history ===
-def build_training_data(user_id):
-    history_df = load_history_from_github()
-    user_data = [h for h in history_df.to_dict('records')
-                 if h.get("user_id") == user_id and "label" in h and h.get("title") and h.get("content")]
-    df = pd.DataFrame(user_data)
-    if df.empty or df["label"].nunique() < 2:
-        return pd.DataFrame()
-    train = []
-    seen = set()
-    for _, row in df.iterrows():
-        title = str(row.get("title", ""))
-        content = str(row.get("content", ""))
-        text = preprocess_text(title + " " + content)
-        label = int(row.get("label", 0))
-        if text and text not in seen:
-            train.append({"text": text, "label": label})
-            seen.add(text)
-    return pd.DataFrame(train)
 
 if __name__ == "__main__":
     main()
