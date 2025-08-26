@@ -233,8 +233,6 @@ def scrape_cnn_fixed(query, max_results=10):
             except Exception:
                 time.sleep(1)
 
-    # --- Halaman tag tidak lagi menjadi fallback karena tidak stabil, tapi jika memang ingin, 
-    # bisa dicoba dengan selektor yang lebih umum. Tapi lebih baik fokus ke RSS.
     return pd.DataFrame(results)
 
 @st.cache_data(show_spinner="Mencari berita di Kompas...")
