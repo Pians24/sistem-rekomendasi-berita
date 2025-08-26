@@ -197,7 +197,6 @@ def scrape_cnn_fixed(query, max_results=10):
     results = []
     for feed_url in feed_urls:
         try:
-            # feedparser.parse tidak mendukung parameter timeout; biarkan default
             feed = feedparser.parse(feed_url)
             if feed.entries:
                 for entry in feed.entries:
@@ -367,19 +366,38 @@ def get_recent_queries_by_days(user_id, df, days=3):
 
     df_user = df[df["user_id"] == user_id].copy()
     jakarta_tz = pytz.timezone("Asia/Jakarta")
+
+    # Konversi kolom 'click_time' ke datetime.
+    # Jika gagal, hasilnya adalah NaT.
     df_user["timestamp"] = pd.to_datetime(
         df_user["click_time"],
         format="%A, %d %B %Y %H:%M",
         errors='coerce'
     )
 
-    if df_user["timestamp"].notna().any():
-        try:
-            df_user.loc[df_user["timestamp"].notna(), "timestamp"] = df_user.loc[df_user["timestamp"].notna(), "timestamp"].dt.tz_localize(jakarta_tz)
-        except TypeError:
-            df_user["timestamp"] = df_user["timestamp"].dt.tz_convert(jakarta_tz)
+    # Menghapus baris yang gagal dikonversi (memiliki nilai NaT)
+    # Ini adalah perbaikan utama untuk AttributeError.
+    df_user = df_user.dropna(subset=['timestamp']).copy()
 
-    df_user = df_user.dropna(subset=['timestamp'])
+    # Jika setelah filtering DataFrame menjadi kosong, kembalikan dict kosong
+    if df_user.empty:
+        return {}
+
+    # Memastikan kolom 'timestamp' bertipe datetime setelah filtering
+    # dan mengonversi ke zona waktu Jakarta jika belum memiliki zona waktu
+    if not pd.api.types.is_datetime64_any_dtype(df_user['timestamp']):
+        # Ini seharusnya tidak terjadi jika pd.to_datetime berhasil,
+        # tetapi sebagai pengamanan tambahan.
+        df_user["timestamp"] = pd.to_datetime(df_user["timestamp"], errors='coerce')
+        df_user = df_user.dropna(subset=['timestamp']).copy()
+        if df_user.empty:
+            return {}
+
+    # Mengatur zona waktu secara eksplisit jika belum ada atau jika perlu dikonversi
+    if df_user["timestamp"].dt.tz is None:
+        df_user.loc[:, "timestamp"] = df_user["timestamp"].dt.tz_localize(jakarta_tz)
+    else:
+        df_user.loc[:, "timestamp"] = df_user["timestamp"].dt.tz_convert(jakarta_tz)
 
     now = datetime.now(jakarta_tz)
     cutoff_time = now - timedelta(days=days)
@@ -399,10 +417,24 @@ def get_recent_queries_by_days(user_id, df, days=3):
     ordered_grouped_queries = {date: grouped_queries[date] for date in sorted_dates}
     return ordered_grouped_queries
 
-# Perbaikan: Fungsi get_queries_grouped_by_date Dihapus dan diganti dengan panggilan langsung
-# def get_queries_grouped_by_date(user_id, df, days=3):
-#     return get_recent_queries_by_days(user_id, df, days=days)
-
+def build_training_data(user_id):
+    history_df = load_history_from_github()
+    user_data = [h for h in history_df.to_dict('records')
+                 if h.get("user_id") == user_id and "label" in h and h.get("title") and h.get("content")]
+    df = pd.DataFrame(user_data)
+    if df.empty or df["label"].nunique() < 2:
+        return pd.DataFrame()
+    train = []
+    seen = set()
+    for _, row in df.iterrows():
+        title = str(row.get("title", ""))
+        content = str(row.get("content", ""))
+        text = preprocess_text(title + " " + content)
+        label = int(row.get("label", 0))
+        if text and text not in seen:
+            train.append({"text": text, "label": label})
+            seen.add(text)
+    return pd.DataFrame(train)
 
 @st.cache_resource(show_spinner="Melatih model rekomendasi...")
 def train_model(df_train):
@@ -495,7 +527,6 @@ def main():
 
     # --- PENCARIAN PER TANGGAL ---
     st.header("📚 Pencarian Berita per Tanggal")
-    # Panggilan langsung ke fungsi aslinya
     grouped_queries = get_recent_queries_by_days(USER_ID, st.session_state.history, days=3)
 
     if grouped_queries:
