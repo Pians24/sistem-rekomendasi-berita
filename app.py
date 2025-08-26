@@ -20,7 +20,7 @@ from github import Github
 import base64
 
 # --- KONFIGURASI HALAMAN STREAMLIT ---
-st.set_page_page_config(page_title="Sistem Rekomendasi Berita", layout="wide")
+st.set_page_config(page_title="Sistem Rekomendasi Berita", layout="wide")
 
 # --- Konfigurasi dan Inisialisasi ---
 USER_ID = "user_01"
@@ -184,7 +184,7 @@ def scrape_detik(query, max_articles=15):
         except Exception:
             time.sleep(2)
     
-    st.error(f"Gagal scraping dari Detik setelah beberapa kali coba.")
+    # st.error(f"Gagal scraping dari Detik setelah beberapa kali coba.") # BARIS INI KINI DIKOMENTARI/DIHAPUS
     return pd.DataFrame()
 
 @st.cache_data(show_spinner="Mencari berita di CNN...")
@@ -262,10 +262,9 @@ def scrape_cnn_fixed(query, max_results=10):
             except Exception as e:
                 time.sleep(2)
 
-    # BARIS INI YANG DIUBAH!
-    if not results:
-        # st.error(f"Gagal scraping dari CNN setelah beberapa kali coba.")
-        pass 
+    # BARIS INI KINI DIKOMENTARI/DIHAPUS
+    # if not results:
+    #     st.error(f"Gagal scraping dari CNN setelah beberapa kali coba.")
     return pd.DataFrame(results)
 
 @st.cache_data(show_spinner="Mencari berita di Kompas...")
@@ -331,7 +330,7 @@ def scrape_kompas_fixed(query, max_articles=10):
         except Exception:
             time.sleep(2)
     
-    st.error(f"Gagal scraping dari Kompas setelah beberapa kali coba.")
+    # st.error(f"Gagal scraping dari Kompas setelah beberapa kali coba.") # BARIS INI KINI DIKOMENTARI/DIHAPUS
     return pd.DataFrame()
 
 @st.cache_data(show_spinner="Menggabungkan hasil...")
