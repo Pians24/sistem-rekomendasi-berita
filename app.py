@@ -24,7 +24,6 @@ st.set_page_config(page_title="Sistem Rekomendasi Berita", layout="wide")
 
 # --- Konfigurasi dan Inisialisasi ---
 USER_ID = "user_01"
-# HEADER DEFAULT (akan di-override di dalam fungsi scraper)
 HEADERS = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:128.0) Gecko/20100101 Firefox/128.0"}
 
 def get_source_from_url(url):
@@ -587,34 +586,45 @@ def main():
                     
                     # Logika untuk menampilkan skor relevansi dari riwayat
                     df_filtered['processed'] = df_filtered.apply(lambda row: preprocess_text(row['title'] + ' ' + str(row.get('content', ''))), axis=1)
+                    
+                    # BARIS BARU: Hitung skor relevansi
                     q_vec = model_sbert.encode([preprocess_text(q)])
                     df_filtered['similarity'] = df_filtered['processed'].apply(lambda x: cosine_similarity([model_sbert.encode(x)], q_vec)[0][0])
                     
                     if clf:
                         df_filtered['final_score'] = clf.predict_proba(model_sbert.encode(df_filtered['processed'].tolist()))[:, 1]
-                        df_filtered = df_filtered.sort_values(by=['publishedAt_dt', 'final_score'], ascending=[False, False])
+                        
+                        # BARIS BARU: Ambil 3 artikel paling relevan per sumber
+                        def top_n_history(x):
+                            return x.sort_values(by=['publishedAt_dt', 'final_score'], ascending=[False, False]).head(3)
+                        articles_to_show = df_filtered.groupby("source", group_keys=False).apply(top_n_history)
+                        articles_to_show = articles_to_show.sort_values(by=['publishedAt_dt', 'final_score'], ascending=[False, False]).reset_index(drop=True)
+                        skor_key = 'final_score'
                     else:
-                        df_filtered = df_filtered.sort_values(by=['publishedAt_dt', 'similarity'], ascending=[False, False])
+                        # BARIS BARU: Ambil 3 artikel paling relevan per sumber (tanpa model)
+                        def top_n_history(x):
+                            return x.sort_values(by=['publishedAt_dt', 'similarity'], ascending=[False, False]).head(3)
+                        articles_to_show = df_filtered.groupby("source", group_keys=False).apply(top_n_history)
+                        articles_to_show = articles_to_show.sort_values(by=['publishedAt_dt', 'similarity'], ascending=[False, False]).reset_index(drop=True)
+                        skor_key = 'similarity'
 
-                    for i, row in df_filtered.iterrows():
+                    if articles_to_show.empty:
+                         st.info("❗ Tidak ada hasil relevan yang ditemukan dalam riwayat untuk topik ini.")
+                         continue
+                    
+                    for i, row in articles_to_show.iterrows():
                         source_name = get_source_from_url(row['url'])
                         
-                        # BARIS YANG DIUBAH UNTUK FORMAT WAKTU
                         try:
-                            # Konversi string riwayat ke objek datetime
                             dt_obj = datetime.strptime(row['click_time'], "%A, %d %B %Y %H:%M")
-                            # Format ulang ke format yang seragam
                             formatted_time = dt_obj.strftime("%Y-%m-%d %H:%M")
                         except ValueError:
-                            formatted_time = row['click_time'] # fallback jika format tidak sesuai
+                            formatted_time = row['click_time']
 
                         st.markdown(f"**[{source_name}]** {row['title']}")
                         st.markdown(f"[{row['url']}]({row['url']})")
                         st.write(f"Waktu: *{formatted_time}*")
-                        
-                        skor_key = 'final_score' if 'final_score' in row else 'similarity'
                         st.write(f"Skor: `{row[skor_key]:.2f}`")
-
                         st.markdown("---")
     else:
         st.info("Belum ada riwayat pencarian pada 3 hari terakhir.")
