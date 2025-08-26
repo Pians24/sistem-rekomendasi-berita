@@ -363,7 +363,7 @@ def save_interaction_to_github(user_id, query, all_articles, clicked_urls):
 
 def get_recent_queries_by_days(user_id, df, days=3):
     if df.empty or "click_time" not in df.columns:
-        return []
+        return {}
     
     df_user = df[df["user_id"] == user_id].copy()
     jakarta_tz = pytz.timezone("Asia/Jakarta")
@@ -492,7 +492,7 @@ def main():
         st.session_state.current_recommended_results = pd.DataFrame()
     if 'clicked_urls_in_session' not in st.session_state:
         st.session_state.clicked_urls_in_session = []
-    
+
     st.sidebar.header("Model Personalisasi")
     df_train = build_training_data(USER_ID)
     clf = None
@@ -504,7 +504,7 @@ def main():
 
     # --- PENCARIAN PER TANGGAL ---
     st.header("📚 Pencarian Berita per Tanggal")
-    grouped_queries = get_queries_grouped_by_date(USER_ID, st.session_state.history, days=3)
+    grouped_queries = get_recent_queries_by_days(USER_ID, st.session_state.history, days=3)
 
     if grouped_queries:
         for date, queries in grouped_queries.items():
@@ -544,8 +544,8 @@ def main():
                                 
                             st.markdown("---")
             
-            if st.session_state.current_query:
-                st.info(f"Anda telah mencatat {len(st.session_state.clicked_urls_in_session)} artikel. Data akan disimpan saat Anda memulai pencarian baru.")
+    if st.session_state.current_query:
+        st.info(f"Anda telah mencatat {len(st.session_state.clicked_urls_in_session)} artikel. Data akan disimpan saat Anda memulai pencarian baru.")
 
 if __name__ == "__main__":
     main()
