@@ -24,6 +24,7 @@ st.set_page_config(page_title="Sistem Rekomendasi Berita", layout="wide")
 
 # --- Konfigurasi dan Inisialisasi ---
 USER_ID = "user_01"
+# HEADER DEFAULT (akan di-override di dalam fungsi scraper)
 HEADERS = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:128.0) Gecko/20100101 Firefox/128.0"}
 
 def get_source_from_url(url):
@@ -222,37 +223,68 @@ def scrape_cnn_fixed(query, max_results=10):
             continue
     return pd.DataFrame(results)
 
+# --- FUNGSI KOMPAS YANG DIPERBARUI ---
 @st.cache_data(show_spinner="Mencari berita di Kompas...")
 def scrape_kompas_fixed(query, max_articles=10):
     search_url = f"https://search.kompas.com/search?q={query.replace(' ', '+')}"
     data = []
+
+    # List User-Agent untuk rotasi
+    USER_AGENTS = [
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/108.0.0.0 Safari/537.36",
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/109.0.0.0 Safari/537.36",
+        "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/108.0.0.0 Safari/537.36",
+        "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/109.0.0.0 Safari/537.36",
+        "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/108.0.0.0 Safari/537.36",
+        "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/109.0.0.0 Safari/537.36",
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:109.0) Gecko/20100101 Firefox/108.0",
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:109.0) Gecko/20100101 Firefox/109.0",
+        "Mozilla/5.0 (Macintosh; Intel Mac OS X 10.15; rv:109.0) Gecko/20100101 Firefox/108.0"
+    ]
+    
     for _ in range(2):
         try:
-            res = requests.get(search_url, headers=HEADERS, timeout=10)
+            # Gunakan User-Agent acak saat mengakses halaman pencarian
+            headers_search = {"User-Agent": random.choice(USER_AGENTS)}
+            res = requests.get(search_url, headers=headers_search, timeout=10)
+            
             if res.status_code == 200:
                 soup = BeautifulSoup(res.text, "html.parser")
                 articles = soup.select("div.articleItem")[:max_articles]
+                
                 if not articles:
                     return pd.DataFrame()
+
                 for item in articles:
                     try:
                         a_tag = item.select_one("a.article-link")
                         title_tag = item.select_one("h2.articleTitle")
+
                         if not a_tag or not title_tag:
                             continue
+
                         url = a_tag["href"]
                         title = title_tag.get_text(strip=True)
 
-                        time.sleep(random.uniform(1, 2))
-                        art_res = requests.get(url, headers=HEADERS, timeout=10)
+                        # Tambahkan jeda waktu acak yang lebih lama dan realistis
+                        time.sleep(random.uniform(2, 5))
+                        
+                        # Gunakan User-Agent acak untuk setiap permintaan artikel
+                        headers_article = {"User-Agent": random.choice(USER_AGENTS)}
+                        art_res = requests.get(url, headers=headers_article, timeout=15)
+                        
+                        if art_res.status_code != 200:
+                            continue
+
                         art_soup = BeautifulSoup(art_res.text, "html.parser")
+
                         content_paras = art_soup.select("div.read__content > p")
                         content = " ".join([p.get_text(strip=True) for p in content_paras])
 
                         time_tag = art_soup.select_one("div.read__time")
                         published = extract_datetime_from_title(time_tag.get_text(strip=True)) if time_tag else ""
 
-                        if (not published) or published.endswith("00:00"):
+                        if not published or published.endswith("00:00"):
                             url_match = re.search(r"/(\d{4})/(\d{2})/(\d{2})/(\d{2})(\d{2})", url)
                             if url_match:
                                 y, m, d, h, mi = url_match.groups()
