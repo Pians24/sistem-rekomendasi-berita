@@ -41,6 +41,7 @@ def load_resources():
     try:
         model_sbert = SentenceTransformer('sentence-transformers/all-mpnet-base-v2')
     except Exception:
+        # fallback lebih kecil jika model utama gagal diunduh
         model_sbert = SentenceTransformer('paraphrase-MiniLM-L6-v2')
     return model_sbert
 
@@ -609,7 +610,7 @@ def main():
         if search_query:
             if 'current_query' in st.session_state and st.session_state.current_query:
                 save_interaction_to_github(USER_ID, st.session_state.current_query, st.session_state.current_recommended_results, st.session_state.clicked_urls_in_session)
-                st.cache_data.clear() # Hapus cache data agar load_history_from_github membaca data terbaru dari GitHub
+                st.cache_data.clear()
                 st.session_state.history = load_history_from_github()
 
             with st.spinner('Mengambil berita dan merekomendasikan...'):
@@ -630,7 +631,7 @@ def main():
         if st.session_state.current_recommended_results.empty:
             st.warning("❗ Tidak ada hasil yang relevan. Coba kata kunci lain.")
         else:
-            for i, row in st.session_state.current_results.iterrows():
+            for i, row in st.session_state.current_recommended_results.iterrows():
                 source_name = get_source_from_url(row['url'])
                 
                 if 'url' in row and row['url']:
