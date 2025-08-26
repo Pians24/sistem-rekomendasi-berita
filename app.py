@@ -184,7 +184,8 @@ def scrape_detik(query, max_articles=15):
         except Exception:
             time.sleep(2)
     
-    # st.error(f"Gagal scraping dari Detik setelah beberapa kali coba.") # BARIS INI KINI DIKOMENTARI/DIHAPUS
+    # BARIS INI TELAH DIHAPUS/DIKOMENTARI
+    # st.error(f"Gagal scraping dari Detik setelah beberapa kali coba.")
     return pd.DataFrame()
 
 @st.cache_data(show_spinner="Mencari berita di CNN...")
@@ -262,7 +263,7 @@ def scrape_cnn_fixed(query, max_results=10):
             except Exception as e:
                 time.sleep(2)
 
-    # BARIS INI KINI DIKOMENTARI/DIHAPUS
+    # BARIS INI JUGA TELAH DIHAPUS/DIKOMENTARI
     # if not results:
     #     st.error(f"Gagal scraping dari CNN setelah beberapa kali coba.")
     return pd.DataFrame(results)
@@ -330,7 +331,8 @@ def scrape_kompas_fixed(query, max_articles=10):
         except Exception:
             time.sleep(2)
     
-    # st.error(f"Gagal scraping dari Kompas setelah beberapa kali coba.") # BARIS INI KINI DIKOMENTARI/DIHAPUS
+    # BARIS INI JUGA TELAH DIHAPUS/DIKOMENTARI
+    # st.error(f"Gagal scraping dari Kompas setelah beberapa kali coba.")
     return pd.DataFrame()
 
 @st.cache_data(show_spinner="Menggabungkan hasil...")
