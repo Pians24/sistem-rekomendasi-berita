@@ -369,16 +369,19 @@ def get_recent_queries_by_days(user_id, df, days=3):
 
     # Membuang semua baris yang gagal dikonversi (nilai NaT)
     df_user = df_user.dropna(subset=['timestamp']).copy()
-    
+
     if df_user.empty:
         return {}
         
-    # Mengatur zona waktu secara eksplisit
-    if df_user["timestamp"].dt.tz is None:
-        df_user.loc[:, "timestamp"] = df_user["timestamp"].dt.tz_localize(jakarta_tz)
-    else:
-        df_user.loc[:, "timestamp"] = df_user["timestamp"].dt.tz_convert(jakarta_tz)
-    
+    # --- PERBAIKAN AKHIR ---
+    # Memaksa tipe data kolom 'timestamp' menjadi datetime64[ns, Asia/Jakarta]
+    # untuk memastikan .dt accessor dapat digunakan
+    df_user['timestamp'] = pd.to_datetime(df_user['timestamp'], errors='coerce', utc=True).dt.tz_convert(jakarta_tz)
+    df_user = df_user.dropna(subset=['timestamp']).copy()
+    if df_user.empty:
+        return {}
+    # --- END OF PERBAIKAN ---
+
     now = datetime.now(jakarta_tz)
     cutoff_time = now - timedelta(days=days)
     recent_df = df_user[df_user["timestamp"] >= cutoff_time].copy()
@@ -386,7 +389,6 @@ def get_recent_queries_by_days(user_id, df, days=3):
     if recent_df.empty:
         return {}
     
-    # Sekarang kolom 'timestamp' sudah pasti bertipe datetime, sehingga .dt aman digunakan.
     recent_df.loc[:, 'date'] = recent_df['timestamp'].dt.strftime('%d %B %Y')
     grouped_queries = recent_df.groupby('date')['query'].unique().to_dict()
 
