@@ -455,7 +455,7 @@ def train_model(df_train):
     st.sidebar.write(f"- Skor F1: {f1_score(y_test, y_pred):.2f}")
     return clf
 
-def recommend(df, query, clf, n_per_source=3):
+def recommend(df, query, clf, n_per_source=3, min_score=0.5): # Menambahkan parameter min_score
     if df.empty:
         return pd.DataFrame()
     df = df.copy()
@@ -478,6 +478,9 @@ def recommend(df, query, clf, n_per_source=3):
         df["score"] = scores
         df["bonus"] = df["title"].apply(lambda x: 0.1 if query.lower() in x.lower() else 0)
         df["final_score"] = (df["score"] + df["bonus"]).clip(0, 1)
+        
+        # Filter berdasarkan skor minimum
+        df = df[df['final_score'] >= min_score].copy()
 
         def top_n(x):
             return x.sort_values(by=['publishedAt_dt', 'final_score'], ascending=[False, False]).head(n_per_source)
@@ -487,6 +490,9 @@ def recommend(df, query, clf, n_per_source=3):
         q_vec = model_sbert.encode([preprocess_text(query)])
         sims = cosine_similarity(q_vec, vec)[0]
         df["similarity"] = sims
+        
+        # Filter berdasarkan skor minimum
+        df = df[df['similarity'] >= min_score].copy()
 
         def top_n_sim(x):
             return x.sort_values(by=['publishedAt_dt', 'similarity'], ascending=[False, False]).head(n_per_source)
@@ -494,18 +500,9 @@ def recommend(df, query, clf, n_per_source=3):
         return top_n_per_source.sort_values(by=['publishedAt_dt', 'similarity'], ascending=[False, False]).reset_index(drop=True)
 
 def main():
-    st.title("📰 Sistem Rekomendasi Berita")
-    st.markdown("Aplikasi ini merekomendasikan berita dari Detik, CNN, dan Kompas berdasarkan riwayat pencarian Anda.")
-
-    if st.sidebar.button("Bersihkan Cache & Muat Ulang"):
-        st.cache_data.clear()
-        st.cache_resource.clear()
-        st.success("Cache berhasil dibersihkan! Aplikasi akan dimuat ulang.")
-        time.sleep(1)
-        st.rerun()
-
-    if 'history' not in st.session_state or st.session_state.history.empty:
-        st.session_state.history = load_history_from_github()
+    # Inisialisasi session_state dengan default yang aman
+    if 'history' not in st.session_state:
+        st.session_state.history = pd.DataFrame()
     if 'current_search_results' not in st.session_state:
         st.session_state.current_search_results = pd.DataFrame()
     if 'show_results' not in st.session_state:
@@ -517,6 +514,20 @@ def main():
     if 'clicked_urls_in_session' not in st.session_state:
         st.session_state.clicked_urls_in_session = []
 
+    st.title("📰 Sistem Rekomendasi Berita")
+    st.markdown("Aplikasi ini merekomendasikan berita dari Detik, CNN, dan Kompas berdasarkan riwayat pencarian Anda.")
+
+    if st.sidebar.button("Bersihkan Cache & Muat Ulang"):
+        st.cache_data.clear()
+        st.cache_resource.clear()
+        st.success("Cache berhasil dibersihkan! Aplikasi akan dimuat ulang.")
+        time.sleep(1)
+        st.rerun()
+
+    # Periksa dan muat ulang riwayat jika sesi kosong
+    if st.session_state.history.empty:
+        st.session_state.history = load_history_from_github()
+    
     st.sidebar.header("Model Personalisasi")
     df_train = build_training_data(USER_ID)
     clf = None
