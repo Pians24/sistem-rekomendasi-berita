@@ -188,6 +188,8 @@ def scrape_cnn_fixed(query, max_results=10):
         "https://www.cnnindonesia.com/ekonomi/rss",
     ]
     results = []
+    
+    # Pencarian RSS
     for feed_url in feed_urls:
         try:
             feed = feedparser.parse(feed_url)
@@ -215,10 +217,50 @@ def scrape_cnn_fixed(query, max_results=10):
                             "url": link,
                             "publishedAt": published_at
                         })
-                        if len(results) >= max_results:
-                            return pd.DataFrame(results)
+                    if len(results) >= max_results:
+                        return pd.DataFrame(results)
         except Exception:
             continue
+
+    # Fallback ke tag scraping jika RSS tidak cukup
+    if len(results) < max_results:
+        try:
+            tag = query.lower().replace(" ", "-")
+            tag_url = f"https://www.cnnindonesia.com/tag/{tag}"
+            resp = requests.get(tag_url, headers=HEADERS, timeout=10)
+            soup = BeautifulSoup(resp.text, "html.parser")
+            items = soup.select("article.list_category .media__title a")
+            
+            for a in items[:max_results - len(results)]:
+                link = a["href"]
+                title = a.get_text(strip=True)
+                if not link.startswith("http"):
+                    link = "https:" + link
+                
+                # Mengambil konten dan tanggal dari halaman artikel
+                try:
+                    art_res = requests.get(link, headers=HEADERS, timeout=10)
+                    art_soup = BeautifulSoup(art_res.text, "html.parser")
+                    content_paras = art_soup.select("div.detail__body-text > p")
+                    content = " ".join([p.get_text(strip=True) for p in content_paras])
+                    time_tag = art_soup.select_one("div.date")
+                    published = time_tag.get_text(strip=True) if time_tag else ""
+                    published_at = extract_datetime_from_title(published) or datetime.now(pytz.timezone("Asia/Jakarta")).strftime("%Y-%m-%d %H:%M")
+
+                    if is_relevant(title, query, content):
+                        results.append({
+                            "source": get_source_from_url(link),
+                            "title": title,
+                            "description": content[:200], # Ambil ringkasan
+                            "content": content,
+                            "url": link,
+                            "publishedAt": published_at
+                        })
+                except Exception:
+                    continue
+        except Exception:
+            pass
+
     return pd.DataFrame(results)
 
 @st.cache_data(show_spinner="Mencari berita di Kompas...")
@@ -571,7 +613,7 @@ def main():
     most_frequent_topics = get_most_frequent_topics(USER_ID, st.session_state.history, days=3)
     if most_frequent_topics:
         q, count = most_frequent_topics[0]
-        # st.subheader(f"{q} ({count}x dicari)") # Baris ini dihapus
+        # st.subheader(f"{q} ({count}x dicari)")
         with st.spinner('Mencari berita...'):
             df_news = scrape_all_sources(q)
         if df_news.empty:
