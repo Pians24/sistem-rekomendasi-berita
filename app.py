@@ -194,19 +194,19 @@ def scrape_cnn_fixed(query, max_results=10):
         "https://www.cnnindonesia.com/ekonomi/rss",
     ]
     results = []
+    
+    # --- Coba RSS Feed Dulu ---
     for feed_url in feed_urls:
         for _ in range(2):
             try:
                 feed = feedparser.parse(feed_url)
                 if feed.entries:
-                    for entry in getattr(feed, "entries", []):
+                    for entry in feed.entries:
                         title = entry.title.strip()
                         link = entry.link
                         summary = getattr(entry, "summary", "").strip()
                         published = getattr(entry, "published", "")
-                        combined_text = f"{title} {summary} {link}".lower()
                         
-                        # Fallback jika tanggal masih kosong
                         published_at = ""
                         try:
                             dt = datetime.strptime(published, "%a, %d %b %Y %H:%M:%S %z").astimezone(pytz.timezone("Asia/Jakarta"))
@@ -215,7 +215,8 @@ def scrape_cnn_fixed(query, max_results=10):
                             jakarta_tz = pytz.timezone("Asia/Jakarta")
                             published_at = datetime.now(jakarta_tz).strftime("%Y-%m-%d %H:%M")
 
-                        if query.lower() in combined_text:
+                        combined_text = f"{title} {summary}".lower()
+                        if query.lower() in combined_text or is_relevant(title, query, summary):
                             results.append({
                                 "source": get_source_from_url(link),
                                 "title": title,
@@ -225,41 +226,47 @@ def scrape_cnn_fixed(query, max_results=10):
                                 "publishedAt": published_at
                             })
                             if len(results) >= max_results:
-                                break
-                    break # Keluar dari retry loop jika berhasil
+                                return pd.DataFrame(results)
+                    break
                 else:
-                    time.sleep(2)
+                    time.sleep(1)
             except Exception:
-                time.sleep(2)
+                time.sleep(1)
 
-    # fallback tag page jika RSS tidak mengandung query
+    # --- Fallback ke Halaman Tag (Jika RSS tidak berhasil) ---
     if not results:
         for _ in range(2):
             try:
                 tag = query.lower().replace(" ", "-")
                 tag_url = f"https://www.cnnindonesia.com/tag/{tag}"
                 resp = requests.get(tag_url, headers=HEADERS, timeout=10)
+                
                 if resp.status_code == 200:
                     soup = BeautifulSoup(resp.text, "html.parser")
-                    items = soup.select("article.list_category .media__title a")
-                    for a in items[:max_results]:
+                    # GANTI SELEKTOR DI SINI
+                    articles_elements = soup.select(".list-rows .box_text a.box_text_img")
+                    
+                    for a in articles_elements:
                         link = a["href"]
                         title = a.get_text(strip=True)
-                        if not link.startswith("http"):
-                            link = "https:" + link
-                        results.append({
-                            "source": get_source_from_url(link),
-                            "title": title,
-                            "description": "",
-                            "content": title,
-                            "url": link,
-                            "publishedAt": datetime.now(pytz.timezone("Asia/Jakarta")).strftime("%Y-%m-%d %H:%M")
-                        })
-                    break
+                        
+                        # Cek apakah artikel relevan sebelum ditambahkan
+                        if is_relevant(title, query):
+                            results.append({
+                                "source": get_source_from_url(link),
+                                "title": title,
+                                "description": "",
+                                "content": title,
+                                "url": link,
+                                "publishedAt": datetime.now(pytz.timezone("Asia/Jakarta")).strftime("%Y-%m-%d %H:%M")
+                            })
+                            if len(results) >= max_results:
+                                return pd.DataFrame(results)
+                    break # Keluar dari loop retry jika berhasil
                 else:
-                    time.sleep(2)
-            except Exception as e:
-                time.sleep(2)
+                    time.sleep(1)
+            except Exception:
+                time.sleep(1)
 
     return pd.DataFrame(results)
 
