@@ -566,9 +566,19 @@ def main():
 
                     for i, row in df_filtered.iterrows():
                         source_name = get_source_from_url(row['url'])
+                        
+                        # BARIS YANG DIUBAH UNTUK FORMAT WAKTU
+                        try:
+                            # Konversi string riwayat ke objek datetime
+                            dt_obj = datetime.strptime(row['click_time'], "%A, %d %B %Y %H:%M")
+                            # Format ulang ke format yang seragam
+                            formatted_time = dt_obj.strftime("%Y-%m-%d %H:%M")
+                        except ValueError:
+                            formatted_time = row['click_time'] # fallback jika format tidak sesuai
+
                         st.markdown(f"**[{source_name}]** {row['title']}")
                         st.markdown(f"[{row['url']}]({row['url']})")
-                        st.write(f"Waktu: *{row['click_time']}*")
+                        st.write(f"Waktu: *{formatted_time}*")
                         
                         skor_key = 'final_score' if 'final_score' in row else 'similarity'
                         st.write(f"Skor: `{row[skor_key]:.2f}`")
@@ -583,7 +593,6 @@ def main():
     most_frequent_topics = get_most_frequent_topics(USER_ID, st.session_state.history, days=3)
     if most_frequent_topics:
         q, count = most_frequent_topics[0]
-        # st.subheader(f"{q}")
         with st.spinner('Mencari berita...'):
             df_news = scrape_all_sources(q)
         if df_news.empty:
