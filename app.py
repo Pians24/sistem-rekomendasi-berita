@@ -138,7 +138,6 @@ def scrape_detik(query, max_articles=15):
     url = f"https://www.detik.com/search/searchall?query={query.replace(' ', '+')}"
     data = []
     
-    # Tambahkan retry mechanism
     for _ in range(2):
         try:
             res = requests.get(url, headers=HEADERS, timeout=10)
@@ -160,7 +159,6 @@ def scrape_detik(query, max_articles=15):
                         published_at = date_tag.get('title', '') if date_tag else ''
                         published_at = extract_datetime_from_title(published_at)
                         
-                        # Fallback jika tanggal masih kosong
                         if not published_at:
                             jakarta_tz = pytz.timezone("Asia/Jakarta")
                             published_at = datetime.now(jakarta_tz).strftime("%Y-%m-%d %H:%M")
@@ -195,7 +193,6 @@ def scrape_cnn_fixed(query, max_results=10):
     ]
     results = []
     
-    # --- Coba RSS Feed Dulu, Ini Bagian yang Paling Stabil ---
     for feed_url in feed_urls:
         try:
             feed = feedparser.parse(feed_url)
@@ -214,7 +211,6 @@ def scrape_cnn_fixed(query, max_results=10):
                         jakarta_tz = pytz.timezone("Asia/Jakarta")
                         published_at = datetime.now(jakarta_tz).strftime("%Y-%m-%d %H:%M")
 
-                    # Logika pencarian yang lebih kuat
                     if is_relevant(title, query, summary):
                         results.append({
                             "source": get_source_from_url(link),
@@ -227,7 +223,6 @@ def scrape_cnn_fixed(query, max_results=10):
                         if len(results) >= max_results:
                             return pd.DataFrame(results)
         except Exception:
-            # Jika ada error, abaikan dan coba feed berikutnya
             continue
 
     return pd.DataFrame(results)
@@ -237,7 +232,6 @@ def scrape_kompas_fixed(query, max_articles=10):
     search_url = f"https://search.kompas.com/search?q={query.replace(' ', '+')}"
     data = []
     
-    # Tambahkan retry mechanism
     for _ in range(2):
         try:
             res = requests.get(search_url, headers=HEADERS, timeout=10)
@@ -264,7 +258,6 @@ def scrape_kompas_fixed(query, max_articles=10):
                         time_tag = art_soup.select_one("div.read__time")
                         published = extract_datetime_from_title(time_tag.get_text(strip=True)) if time_tag else ""
 
-                        # Fallback tanggal
                         if (not published) or published.endswith("00:00"):
                             url_match = re.search(r"/(\d{4})/(\d{2})/(\d{2})/(\d{2})(\d{2})", url)
                             if url_match:
@@ -273,14 +266,13 @@ def scrape_kompas_fixed(query, max_articles=10):
                                 dt = pytz.timezone("Asia/Jakarta").localize(dt)
                                 published = dt.strftime("%Y-%m-%d %H:%M")
                         
-                        # Fallback terakhir jika tanggal masih kosong
                         if not published:
                             jakarta_tz = pytz.timezone("Asia/Jakarta")
                             published = datetime.now(jakarta_tz).strftime("%Y-%m-%d %H:%M")
 
                         if is_relevant(title, query, content):
                             data.append({
-                                "source": get_source_from_url(url), # BUG FIX: Menggunakan 'url' bukan 'link'
+                                "source": get_source_from_url(url), 
                                 "title": title,
                                 "description": "",
                                 "content": content,
@@ -327,7 +319,6 @@ def load_history_from_github():
         repo = g.get_user(st.secrets["repo_owner"]).get_repo(st.secrets["repo_name"])
         contents = repo.get_contents(st.secrets["file_path"])
         
-        # GitHub API mengembalikan konten sebagai string base64, jadi harus didecode
         file_content = contents.decoded_content.decode('utf-8')
         data = json.loads(file_content)
         
@@ -340,7 +331,6 @@ def save_interaction_to_github(user_id, query, all_articles, clicked_urls):
     g = get_github_client()
     repo = g.get_user(st.secrets["repo_owner"]).get_repo(st.secrets["repo_name"])
     
-    # Baca riwayat yang sudah ada
     try:
         contents = repo.get_contents(st.secrets["file_path"])
         history_str = contents.decoded_content.decode('utf-8')
@@ -363,7 +353,6 @@ def save_interaction_to_github(user_id, query, all_articles, clicked_urls):
         }
         history_list.append(article_log)
     
-    # Enkode konten yang diperbarui dan unggah ke GitHub
     updated_content = json.dumps(history_list, indent=2)
     repo.update_file(
         st.secrets["file_path"],
@@ -461,11 +450,9 @@ def recommend(df, query, clf, n_per_source=3):
     df = df.copy()
     df.drop_duplicates(subset=['url'], inplace=True)
 
-    # representasi berdasarkan teks apa adanya (tanpa stopwords)
     df["processed"] = df.apply(lambda row: preprocess_text(row['title'] + ' ' + row.get('content', '')), axis=1)
     vec = model_sbert.encode(df["processed"].tolist())
 
-    # simpan vektor sementara agar tidak mismatch setelah dropna
     df['publishedAt_dt'] = pd.to_datetime(df['publishedAt'], errors='coerce')
     df['vec_temp'] = list(vec)
     df = df.dropna(subset=['publishedAt_dt'])
@@ -495,7 +482,6 @@ def recommend(df, query, clf, n_per_source=3):
         top_n_per_source = df.groupby("source", group_keys=False).apply(top_n_sim, include_groups=False)
         return top_n_per_source.sort_values(by=['publishedAt_dt', 'similarity'], ascending=[False, False]).reset_index(drop=True)
 
-# --- FUNGSI BARU UNTUK MENGELOMPOKKAN RIWAYAT BERDASARKAN TANGGAL ---
 def get_queries_grouped_by_date(user_id, df, days=3):
     if df.empty or "click_time" not in df.columns:
         return {}
@@ -506,10 +492,13 @@ def get_queries_grouped_by_date(user_id, df, days=3):
         format="%A, %d %B %Y %H:%M",
         errors='coerce'
     ).dt.tz_localize(jakarta_tz, ambiguous='NaT', nonexistent='NaT')
+    
     df_user = df_user.dropna(subset=['timestamp'])
+    
     now = datetime.now(jakarta_tz)
     cutoff_time = now - timedelta(days=days)
-    recent_df = df_user[df_user["timestamp"] >= cutoff_time].copy()
+    recent_df = df_user[df_user["timestamp"] >= cutoff_time]
+    
     if recent_df.empty:
         return {}
     
