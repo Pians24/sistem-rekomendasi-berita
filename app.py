@@ -636,7 +636,7 @@ def main():
                 skor_key = 'final_score' if 'final_score' in row else 'similarity'
                 st.write(f"Skor: `{row[skor_key]:.2f}`")
                 
-                key_link = f"link_{i}_{row.get('url', 'no_url')}"
+                key_link = f"link_{i}_{row.get('url', 'no_url')}_{st.session_state.current_query}"
                 if st.button(f"Catat Interaksi", key=key_link):
                     st.session_state.clicked_urls_in_session.append(row['url'])
                     st.toast("Interaksi Anda telah dicatat untuk sesi ini.")
