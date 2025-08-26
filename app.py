@@ -455,7 +455,7 @@ def train_model(df_train):
     st.sidebar.write(f"- Skor F1: {f1_score(y_test, y_pred):.2f}")
     return clf
 
-def recommend(df, query, clf, n_per_source=3, min_score=0.5): # Menambahkan parameter min_score
+def recommend(df, query, clf, n_per_source=3, min_score=0.5):
     if df.empty:
         return pd.DataFrame()
     df = df.copy()
@@ -479,7 +479,6 @@ def recommend(df, query, clf, n_per_source=3, min_score=0.5): # Menambahkan para
         df["bonus"] = df["title"].apply(lambda x: 0.1 if query.lower() in x.lower() else 0)
         df["final_score"] = (df["score"] + df["bonus"]).clip(0, 1)
         
-        # Filter berdasarkan skor minimum
         df = df[df['final_score'] >= min_score].copy()
 
         def top_n(x):
@@ -491,7 +490,6 @@ def recommend(df, query, clf, n_per_source=3, min_score=0.5): # Menambahkan para
         sims = cosine_similarity(q_vec, vec)[0]
         df["similarity"] = sims
         
-        # Filter berdasarkan skor minimum
         df = df[df['similarity'] >= min_score].copy()
 
         def top_n_sim(x):
@@ -500,7 +498,6 @@ def recommend(df, query, clf, n_per_source=3, min_score=0.5): # Menambahkan para
         return top_n_per_source.sort_values(by=['publishedAt_dt', 'similarity'], ascending=[False, False]).reset_index(drop=True)
 
 def main():
-    # Inisialisasi session_state dengan default yang aman
     if 'history' not in st.session_state:
         st.session_state.history = pd.DataFrame()
     if 'current_search_results' not in st.session_state:
@@ -524,7 +521,6 @@ def main():
         time.sleep(1)
         st.rerun()
 
-    # Periksa dan muat ulang riwayat jika sesi kosong
     if st.session_state.history.empty:
         st.session_state.history = load_history_from_github()
     
@@ -537,7 +533,6 @@ def main():
     else:
         st.sidebar.info("Model belum bisa dilatih karena riwayat tidak mencukupi. Silakan lakukan pencarian dan klik tautan artikel.")
 
-    # --- PENCARIAN PER TANGGAL ---
     st.header("📚 Pencarian Berita per Tanggal")
     grouped_queries = get_recent_queries_by_days(USER_ID, st.session_state.history, days=3)
 
@@ -547,48 +542,36 @@ def main():
             unique_queries = sorted(list(set(queries)))
             for q in unique_queries:
                 with st.expander(f"- {q}"):
-                    with st.spinner('Mencari berita...'):
-                        df_news = scrape_all_sources(q)
-                    if df_news.empty:
-                        st.info("❗ Tidak ditemukan berita.")
+                    df_filtered = st.session_state.history[(st.session_state.history['query'] == q) & (st.session_state.history['user_id'] == USER_ID)].copy()
+                    
+                    if df_filtered.empty:
+                        st.info("❗ Tidak ditemukan berita dalam riwayat untuk topik ini.")
                         continue
-
-                    results = recommend(df_news, q, clf, n_per_source=3)
-                    if results.empty:
-                        st.info("❗ Tidak ada hasil relevan.")
-                        continue
+                    
+                    df_filtered['publishedAt_dt'] = pd.to_datetime(df_filtered['click_time'], format="%A, %d %B %Y %H:%M", errors='coerce')
+                    df_filtered = df_filtered.dropna(subset=['publishedAt_dt'])
+                    
+                    if clf:
+                        df_filtered = df_filtered.sort_values(by=['publishedAt_dt', 'label'], ascending=[False, False])
                     else:
-                        for i, row in results.iterrows():
-                            source_name = get_source_from_url(row['url'])
-                            if 'url' in row and row['url']:
-                                st.markdown(f"**[{source_name}]** {row['title']}")
-                                st.markdown(f"[{row['url']}]({row['url']})")
-                            else:
-                                st.markdown(f"**[{source_name}]** {row['title']}")
-                                st.info("Tautan tidak tersedia.")
-                            st.write(f"Waktu: *{row['publishedAt']}*")
-                            skor_key = 'final_score' if 'final_score' in row else 'similarity'
-                            st.write(f"Skor: `{row[skor_key]:.2f}`")
+                        df_filtered = df_filtered.sort_values(by=['publishedAt_dt'], ascending=[False])
 
-                            key_link = f"link_{i}_{row.get('url', 'no_url')}"
-                            if st.button(f"Catat Interaksi", key=key_link):
-                                st.session_state.clicked_urls_in_session.append(row['url'])
-                                st.toast("Interaksi Anda telah dicatat untuk sesi ini.")
-                            st.markdown("---")
-
-            if st.session_state.current_query:
-                st.info(f"Anda telah mencatat {len(st.session_state.clicked_urls_in_session)} artikel. Data akan disimpan saat Anda memulai pencarian baru.")
+                    for i, row in df_filtered.iterrows():
+                        source_name = get_source_from_url(row['url'])
+                        st.markdown(f"**[{source_name}]** {row['title']}")
+                        st.markdown(f"[{row['url']}]({row['url']})")
+                        st.write(f"Waktu: *{row['click_time']}*")
+                        st.markdown("---")
     else:
         st.info("Belum ada riwayat pencarian pada 3 hari terakhir.")
 
     st.markdown("---")
 
-    # --- REKOMENDASI HARI INI (BERDASARKAN PENCARIAN TERBANYAK) ---
     st.header("🔥 Rekomendasi Berita Hari Ini")
     most_frequent_topics = get_most_frequent_topics(USER_ID, st.session_state.history, days=3)
     if most_frequent_topics:
         q, count = most_frequent_topics[0]
-        st.subheader(f"{q} ({count}x dicari)")
+        # st.subheader(f"{q} ({count}x dicari)") # Baris ini dihapus
         with st.spinner('Mencari berita...'):
             df_news = scrape_all_sources(q)
         if df_news.empty:
@@ -611,7 +594,6 @@ def main():
 
     st.markdown("---")
 
-    # --- PENCARIAN BERITA MANUAL ---
     st.header("🔍 Pencarian Berita")
     search_query = st.text_input("Ketik topik berita yang ingin Anda cari:", key="search_input")
 
