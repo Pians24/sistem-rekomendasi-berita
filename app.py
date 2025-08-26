@@ -499,6 +499,7 @@ def recommend(df, query, clf, n_per_source=3, min_score=0.5):
         return top_n_per_source.sort_values(by=['publishedAt_dt', 'similarity'], ascending=[False, False]).reset_index(drop=True)
 
 def main():
+    # Inisialisasi session_state dengan default yang aman
     if 'history' not in st.session_state:
         st.session_state.history = pd.DataFrame()
     if 'current_search_results' not in st.session_state:
