@@ -41,6 +41,7 @@ def load_resources():
     try:
         model_sbert = SentenceTransformer('sentence-transformers/all-mpnet-base-v2')
     except Exception:
+        # fallback lebih kecil jika model utama gagal diunduh
         model_sbert = SentenceTransformer('paraphrase-MiniLM-L6-v2')
     return model_sbert
 
@@ -373,22 +374,14 @@ def get_recent_queries_by_days(user_id, df, days=3):
     if df_user.empty:
         return {}
         
-    # --- PERBAIKAN PENTING ---
-    # Memaksa tipe data kolom 'timestamp' menjadi datetime64[ns, Asia/Jakarta].
-    # Ini memastikan bahwa pandas mengenali kolom tersebut dengan benar.
     try:
-        df_user['timestamp'] = pd.to_datetime(df_user['timestamp']).dt.tz_localize(jakarta_tz, errors='coerce')
-    except Exception as e:
-        # Jika masih gagal, mungkin ada entri yang tidak terduga.
-        # Kita akan log error dan mencoba konversi yang lebih umum.
-        st.error(f"Konversi datetime gagal. Mencoba metode alternatif: {e}")
-        df_user['timestamp'] = pd.to_datetime(df_user['timestamp'], errors='coerce').dt.tz_localize(jakarta_tz, errors='coerce')
-    
-    # Hapus lagi baris yang mungkin gagal dikonversi pada langkah terakhir
+        df_user['timestamp'] = pd.to_datetime(df_user['timestamp']).dt.tz_localize(jakarta_tz, ambiguous='NaT', nonexistent='NaT')
+    except Exception:
+        return {}
+
     df_user = df_user.dropna(subset=['timestamp']).copy()
     if df_user.empty:
         return {}
-    # --- END OF PERBAIKAN ---
 
     now = datetime.now(jakarta_tz)
     cutoff_time = now - timedelta(days=days)
