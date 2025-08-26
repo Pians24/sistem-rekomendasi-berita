@@ -492,7 +492,7 @@ def main():
         st.session_state.current_recommended_results = pd.DataFrame()
     if 'clicked_urls_in_session' not in st.session_state:
         st.session_state.clicked_urls_in_session = []
-
+    
     st.sidebar.header("Model Personalisasi")
     df_train = build_training_data(USER_ID)
     clf = None
@@ -502,9 +502,68 @@ def main():
     else:
         st.sidebar.info("Model belum bisa dilatih karena riwayat tidak mencukupi. Silakan lakukan pencarian dan klik link artikel.")
 
-    # --- PENCARIAN PER TANGGAL ---
-    st.header("📚 Pencarian Berita per Tanggal")
-    grouped_queries = get_recent_queries_by_days(USER_ID, st.session_state.history, days=3)
+    # --- Bagian Pencarian Baru ---
+    st.header("🔍 Pencarian Berita Baru")
+    new_query = st.text_input("Masukkan kata kunci pencarian:", st.session_state.current_query)
+
+    if st.button("Cari"):
+        if new_query:
+            if st.session_state.current_query and st.session_state.clicked_urls_in_session:
+                save_interaction_to_github(
+                    USER_ID,
+                    st.session_state.current_query,
+                    st.session_state.current_search_results,
+                    st.session_state.clicked_urls_in_session
+                )
+                st.session_state.history = load_history_from_github()
+                st.session_state.clicked_urls_in_session = []
+                st.success("Interaksi sebelumnya berhasil disimpan ke riwayat.")
+            
+            st.session_state.current_query = new_query
+            st.session_state.show_results = True
+            with st.spinner('Mencari berita...'):
+                df_news = scrape_all_sources(new_query)
+            st.session_state.current_search_results = df_news
+            st.session_state.current_recommended_results = recommend(df_news, new_query, clf, n_per_source=3)
+            st.rerun()
+        else:
+            st.warning("Silakan masukkan kata kunci pencarian.")
+
+    if st.session_state.show_results and not st.session_state.current_recommended_results.empty:
+        st.markdown("---")
+        st.header(f"Hasil Rekomendasi untuk '{st.session_state.current_query}'")
+        for i, row in st.session_state.current_recommended_results.iterrows():
+            source_name = get_source_from_url(row['url'])
+            
+            if 'url' in row and row['url']:
+                st.markdown(f"**[{source_name}]** {row['title']}")
+                st.markdown(f"[{row['url']}]({row['url']})")
+            else:
+                st.markdown(f"**[{source_name}]** {row['title']}")
+                st.info("Tautan tidak tersedia.")
+
+            st.write(f"Waktu: *{row['publishedAt']}*")
+            skor_key = 'final_score' if 'final_score' in row else 'similarity'
+            st.write(f"Skor: `{row[skor_key]:.2f}`")
+            
+            key_link = f"link_{i}_{row.get('url', 'no_url')}"
+            if st.button(f"Catat Interaksi", key=key_link):
+                st.session_state.clicked_urls_in_session.append(row['url'])
+                st.toast("Interaksi Anda telah dicatat untuk sesi ini.")
+            
+            st.markdown("---")
+        
+        if st.session_state.current_query:
+            st.info(f"Anda telah mencatat {len(st.session_state.clicked_urls_in_session)} artikel. Data akan disimpan saat Anda memulai pencarian baru.")
+
+    elif st.session_state.show_results and st.session_state.current_recommended_results.empty:
+        st.markdown("---")
+        st.info(f"Tidak ada hasil relevan yang ditemukan untuk '{st.session_state.current_query}'.")
+
+    # --- Bagian Riwayat Pencarian ---
+    st.markdown("---")
+    st.header("📚 Riwayat Pencarian")
+    grouped_queries = get_recent_queries_by_days(USER_ID, st.session_state.history, days=7)
 
     if grouped_queries:
         for date, queries in grouped_queries.items():
@@ -513,39 +572,24 @@ def main():
             
             for q in unique_queries:
                 with st.expander(f"- {q}"):
-                    with st.spinner('Mencari berita...'):
-                        df_news = scrape_all_sources(q)
-                    if df_news.empty:
-                        st.info("❗ Tidak ditemukan berita.")
-                        continue
+                    # Menampilkan artikel yang sudah pernah dilihat
+                    history_articles = st.session_state.history[
+                        (st.session_state.history['user_id'] == USER_ID) & 
+                        (st.session_state.history['query'] == q)
+                    ].drop_duplicates(subset=['url'])
                     
-                    results = recommend(df_news, q, clf, n_per_source=3)
-                    if results.empty:
-                        st.info("❗ Tidak ada hasil relevan.")
-                    else:
-                        for i, row in results.iterrows():
+                    if not history_articles.empty:
+                        for _, row in history_articles.iterrows():
+                            is_clicked = "✅" if row['label'] == 1 else "❌"
                             source_name = get_source_from_url(row['url'])
-                            
-                            if 'url' in row and row['url']:
-                                st.markdown(f"**[{source_name}]** {row['title']}")
-                                st.markdown(f"[{row['url']}]({row['url']})")
-                            else:
-                                st.markdown(f"**[{source_name}]** {row['title']}")
-                                st.info("Tautan tidak tersedia.")
-
-                            st.write(f"Waktu: *{row['publishedAt']}*")
-                            skor_key = 'final_score' if 'final_score' in row else 'similarity'
-                            st.write(f"Skor: `{row[skor_key]:.2f}`")
-                            
-                            key_link = f"link_{i}_{row.get('url', 'no_url')}"
-                            if st.button(f"Catat Interaksi", key=key_link):
-                                st.session_state.clicked_urls_in_session.append(row['url'])
-                                st.toast("Interaksi Anda telah dicatat untuk sesi ini.")
-                                
+                            st.markdown(f"**[{is_clicked}] [{source_name}]** {row['title']}")
+                            st.markdown(f"[{row['url']}]({row['url']})")
+                            st.write(f"Waktu: *{row['click_time']}*")
                             st.markdown("---")
-            
-    if st.session_state.current_query:
-        st.info(f"Anda telah mencatat {len(st.session_state.clicked_urls_in_session)} artikel. Data akan disimpan saat Anda memulai pencarian baru.")
+                    else:
+                        st.info("Tidak ada artikel yang tercatat untuk pencarian ini.")
+    else:
+        st.info("Belum ada riwayat pencarian dalam 7 hari terakhir.")
 
 if __name__ == "__main__":
     main()
