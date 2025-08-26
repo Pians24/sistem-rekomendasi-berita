@@ -553,17 +553,26 @@ def main():
                     df_filtered['publishedAt_dt'] = pd.to_datetime(df_filtered['click_time'], format="%A, %d %B %Y %H:%M", errors='coerce')
                     df_filtered = df_filtered.dropna(subset=['publishedAt_dt'])
                     
+                    # Logika untuk menampilkan skor relevansi dari riwayat
+                    df_filtered['processed'] = df_filtered.apply(lambda row: preprocess_text(row['title'] + ' ' + str(row.get('content', ''))), axis=1)
+                    q_vec = model_sbert.encode([preprocess_text(q)])
+                    df_filtered['similarity'] = df_filtered['processed'].apply(lambda x: cosine_similarity([model_sbert.encode(x)], q_vec)[0][0])
+                    
                     if clf:
-                        df_filtered = df_filtered.sort_values(by=['publishedAt_dt', 'label'], ascending=[False, False])
+                        df_filtered['final_score'] = clf.predict_proba(model_sbert.encode(df_filtered['processed'].tolist()))[:, 1]
+                        df_filtered = df_filtered.sort_values(by=['publishedAt_dt', 'final_score'], ascending=[False, False])
                     else:
-                        df_filtered = df_filtered.sort_values(by=['publishedAt_dt'], ascending=[False])
+                        df_filtered = df_filtered.sort_values(by=['publishedAt_dt', 'similarity'], ascending=[False, False])
 
                     for i, row in df_filtered.iterrows():
                         source_name = get_source_from_url(row['url'])
                         st.markdown(f"**[{source_name}]** {row['title']}")
                         st.markdown(f"[{row['url']}]({row['url']})")
                         st.write(f"Waktu: *{row['click_time']}*")
-                        # st.write(f"Skor: *{row['score']:.2f}*") # Baris ini dihapus
+                        
+                        skor_key = 'final_score' if 'final_score' in row else 'similarity'
+                        st.write(f"Skor: `{row[skor_key]:.2f}`")
+
                         st.markdown("---")
     else:
         st.info("Belum ada riwayat pencarian pada 3 hari terakhir.")
@@ -574,7 +583,7 @@ def main():
     most_frequent_topics = get_most_frequent_topics(USER_ID, st.session_state.history, days=3)
     if most_frequent_topics:
         q, count = most_frequent_topics[0]
-        st.subheader(f"{q}")
+        # st.subheader(f"{q}")
         with st.spinner('Mencari berita...'):
             df_news = scrape_all_sources(q)
         if df_news.empty:
