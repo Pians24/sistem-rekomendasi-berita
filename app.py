@@ -195,7 +195,7 @@ def scrape_cnn_fixed(query, max_results=10):
     ]
     results = []
     
-    # --- Coba RSS Feed Dulu ---
+    # --- Coba RSS Feed Dulu, Ini Bagian yang Paling Stabil ---
     for feed_url in feed_urls:
         for _ in range(2):
             try:
@@ -215,8 +215,8 @@ def scrape_cnn_fixed(query, max_results=10):
                             jakarta_tz = pytz.timezone("Asia/Jakarta")
                             published_at = datetime.now(jakarta_tz).strftime("%Y-%m-%d %H:%M")
 
-                        combined_text = f"{title} {summary}".lower()
-                        if query.lower() in combined_text or is_relevant(title, query, summary):
+                        # Gabungkan logika is_relevant di sini
+                        if is_relevant(title, query, summary):
                             results.append({
                                 "source": get_source_from_url(link),
                                 "title": title,
@@ -233,41 +233,8 @@ def scrape_cnn_fixed(query, max_results=10):
             except Exception:
                 time.sleep(1)
 
-    # --- Fallback ke Halaman Tag (Jika RSS tidak berhasil) ---
-    if not results:
-        for _ in range(2):
-            try:
-                tag = query.lower().replace(" ", "-")
-                tag_url = f"https://www.cnnindonesia.com/tag/{tag}"
-                resp = requests.get(tag_url, headers=HEADERS, timeout=10)
-                
-                if resp.status_code == 200:
-                    soup = BeautifulSoup(resp.text, "html.parser")
-                    # GANTI SELEKTOR DI SINI ke yang lebih umum
-                    articles_elements = soup.select("article a[href]:has(h2)")
-                    
-                    for a in articles_elements:
-                        link = a["href"]
-                        title = a.get_text(strip=True)
-                        
-                        # Cek apakah artikel relevan sebelum ditambahkan
-                        if is_relevant(title, query):
-                            results.append({
-                                "source": get_source_from_url(link),
-                                "title": title,
-                                "description": "",
-                                "content": title,
-                                "url": link,
-                                "publishedAt": datetime.now(pytz.timezone("Asia/Jakarta")).strftime("%Y-%m-%d %H:%M")
-                            })
-                            if len(results) >= max_results:
-                                return pd.DataFrame(results)
-                    break # Keluar dari loop retry jika berhasil
-                else:
-                    time.sleep(1)
-            except Exception:
-                time.sleep(1)
-
+    # --- Halaman tag tidak lagi menjadi fallback karena tidak stabil, tapi jika memang ingin, 
+    # bisa dicoba dengan selektor yang lebih umum. Tapi lebih baik fokus ke RSS.
     return pd.DataFrame(results)
 
 @st.cache_data(show_spinner="Mencari berita di Kompas...")
