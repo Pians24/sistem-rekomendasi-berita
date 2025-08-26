@@ -572,7 +572,7 @@ def main():
     most_frequent_topics = get_most_frequent_topics(USER_ID, st.session_state.history, days=3)
     if most_frequent_topics:
         q, count = most_frequent_topics[0]
-        st.subheader(f"{q}")
+        # st.subheader(f"{q} ({count}x dicari)") # Baris ini dihapus
         with st.spinner('Mencari berita...'):
             df_news = scrape_all_sources(q)
         if df_news.empty:
