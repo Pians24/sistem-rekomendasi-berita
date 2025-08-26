@@ -41,7 +41,6 @@ def load_resources():
     try:
         model_sbert = SentenceTransformer('sentence-transformers/all-mpnet-base-v2')
     except Exception:
-        # fallback lebih kecil jika model utama gagal diunduh
         model_sbert = SentenceTransformer('paraphrase-MiniLM-L6-v2')
     return model_sbert
 
@@ -354,7 +353,6 @@ def save_interaction_to_github(user_id, query, all_articles, clicked_urls):
     )
 
 def get_recent_queries_by_days(user_id, df, days=3):
-    """Mengembalikan dict terurut: { '25 Agustus 2025': ['gempa','pemilu',...], ... }"""
     if df.empty or "click_time" not in df.columns:
         return {}
 
