@@ -367,19 +367,25 @@ def get_recent_queries_by_days(user_id, df, days=3):
         errors='coerce'
     )
 
-    # Membuang semua baris yang gagal dikonversi (nilai NaT)
+    # Perbaikan: Hapus baris dengan nilai NaT.
     df_user = df_user.dropna(subset=['timestamp']).copy()
 
     if df_user.empty:
         return {}
         
-    # --- PERBAIKAN AKHIR ---
-    # Memaksa tipe data kolom 'timestamp' menjadi datetime64[ns, Asia/Jakarta]
-    # untuk memastikan .dt accessor dapat digunakan
-    df_user['timestamp'] = pd.to_datetime(df_user['timestamp'], errors='coerce', utc=True).dt.tz_convert(jakarta_tz)
-    df_user = df_user.dropna(subset=['timestamp']).copy()
-    if df_user.empty:
-        return {}
+    # --- PERBAIKAN PENTING ---
+    # Memaksa tipe data kolom 'timestamp' menjadi datetime64[ns, Asia/Jakarta].
+    # Ini memastikan bahwa pandas mengenali kolom tersebut dengan benar.
+    try:
+        df_user['timestamp'] = pd.to_datetime(df_user['timestamp']).dt.tz_localize(jakarta_tz)
+    except Exception as e:
+        # Jika masih gagal, mungkin ada entri yang tidak terduga.
+        # Kita akan log error dan mencoba konversi yang lebih umum.
+        st.error(f"Konversi datetime gagal. Mencoba metode alternatif: {e}")
+        df_user['timestamp'] = pd.to_datetime(df_user['timestamp'], errors='coerce').dt.tz_localize(jakarta_tz)
+        df_user = df_user.dropna(subset=['timestamp']).copy()
+        if df_user.empty:
+            return {}
     # --- END OF PERBAIKAN ---
 
     now = datetime.now(jakarta_tz)
