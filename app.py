@@ -41,6 +41,7 @@ def load_resources():
     try:
         model_sbert = SentenceTransformer('sentence-transformers/all-mpnet-base-v2')
     except Exception:
+        # fallback lebih kecil jika model utama gagal diunduh
         model_sbert = SentenceTransformer('paraphrase-MiniLM-L6-v2')
     return model_sbert
 
@@ -205,7 +206,7 @@ def scrape_cnn_fixed(query, max_results=10):
                     except:
                         jakarta_tz = pytz.timezone("Asia/Jakarta")
                         published_at = datetime.now(jakarta_tz).strftime("%Y-%m-%d %H:%M")
-
+                    
                     if is_relevant(title, query, summary):
                         results.append({
                             "source": get_source_from_url(link),
@@ -215,8 +216,8 @@ def scrape_cnn_fixed(query, max_results=10):
                             "url": link,
                             "publishedAt": published_at
                         })
-                        if len(results) >= max_results:
-                            return pd.DataFrame(results)
+                    if len(results) >= max_results:
+                        return pd.DataFrame(results)
         except Exception:
             continue
     return pd.DataFrame(results)
