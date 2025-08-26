@@ -367,45 +367,35 @@ def get_recent_queries_by_days(user_id, df, days=3):
     df_user = df[df["user_id"] == user_id].copy()
     jakarta_tz = pytz.timezone("Asia/Jakarta")
 
-    # Konversi kolom 'click_time' ke datetime.
-    # Jika gagal, hasilnya adalah NaT.
+    # Konversi kolom 'click_time' ke datetime, dengan NaT untuk yang gagal.
     df_user["timestamp"] = pd.to_datetime(
         df_user["click_time"],
         format="%A, %d %B %Y %H:%M",
         errors='coerce'
     )
 
-    # Menghapus baris yang gagal dikonversi (memiliki nilai NaT)
+    # MEMBUANG BARIS DENGAN NILAI NaT (NOT A TIME)
     # Ini adalah perbaikan utama untuk AttributeError.
     df_user = df_user.dropna(subset=['timestamp']).copy()
-
+    
     # Jika setelah filtering DataFrame menjadi kosong, kembalikan dict kosong
     if df_user.empty:
         return {}
-
-    # Memastikan kolom 'timestamp' bertipe datetime setelah filtering
-    # dan mengonversi ke zona waktu Jakarta jika belum memiliki zona waktu
-    if not pd.api.types.is_datetime64_any_dtype(df_user['timestamp']):
-        # Ini seharusnya tidak terjadi jika pd.to_datetime berhasil,
-        # tetapi sebagai pengamanan tambahan.
-        df_user["timestamp"] = pd.to_datetime(df_user["timestamp"], errors='coerce')
-        df_user = df_user.dropna(subset=['timestamp']).copy()
-        if df_user.empty:
-            return {}
-
-    # Mengatur zona waktu secara eksplisit jika belum ada atau jika perlu dikonversi
+        
+    # Mengatur zona waktu secara eksplisit
     if df_user["timestamp"].dt.tz is None:
         df_user.loc[:, "timestamp"] = df_user["timestamp"].dt.tz_localize(jakarta_tz)
     else:
         df_user.loc[:, "timestamp"] = df_user["timestamp"].dt.tz_convert(jakarta_tz)
-
+    
     now = datetime.now(jakarta_tz)
     cutoff_time = now - timedelta(days=days)
     recent_df = df_user[df_user["timestamp"] >= cutoff_time].copy()
-
+    
     if recent_df.empty:
         return {}
-
+    
+    # Sekarang kolom 'timestamp' sudah pasti bertipe datetime, sehingga .dt aman digunakan.
     recent_df.loc[:, 'date'] = recent_df['timestamp'].dt.strftime('%d %B %Y')
     grouped_queries = recent_df.groupby('date')['query'].unique().to_dict()
 
