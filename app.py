@@ -41,7 +41,6 @@ def load_resources():
     try:
         model_sbert = SentenceTransformer('sentence-transformers/all-mpnet-base-v2')
     except Exception:
-        # fallback lebih kecil jika model utama gagal diunduh
         model_sbert = SentenceTransformer('paraphrase-MiniLM-L6-v2')
     return model_sbert
 
@@ -67,7 +66,6 @@ def extract_datetime_from_title(title):
     }
     zona = pytz.timezone("Asia/Jakarta")
 
-    # Gaya Kompas: "Kompas.com - 25/08/2025, 14:12"
     pattern_kompas = r"Kompas\.com\s*-\s*(\d{2})/(\d{2})/(\d{4}),\s*(\d{2}:\d{2})"
     match = re.search(pattern_kompas, title)
     if match:
@@ -78,7 +76,6 @@ def extract_datetime_from_title(title):
         except:
             pass
 
-    # "Senin, 25 Agustus 2025 14:12" atau tanpa nama hari
     pattern1 = r"(?:\w+, )?(\d{1,2}) (\w+) (\d{4}) (\d{2}:\d{2})"
     match = re.search(pattern1, title)
     if match:
@@ -91,7 +88,6 @@ def extract_datetime_from_title(title):
             except:
                 pass
 
-    # "25 Agustus 2025"
     pattern2 = r"(\d{1,2}) (\w+) (\d{4})"
     match = re.search(pattern2, title)
     if match:
@@ -104,7 +100,6 @@ def extract_datetime_from_title(title):
             except:
                 pass
 
-    # "25/08/2025, 14:12"
     pattern3 = r"(\d{2})/(\d{2})/(\d{4}), (\d{2}:\d{2})"
     match = re.search(pattern3, title)
     if match:
@@ -115,7 +110,6 @@ def extract_datetime_from_title(title):
         except:
             pass
 
-    # "5 menit yang lalu" / "2 jam yang lalu"
     pattern4 = r"(\d+)\s+(menit|jam)\s+yang lalu"
     match = re.search(pattern4, title)
     if match:
@@ -127,7 +121,8 @@ def extract_datetime_from_title(title):
         except:
             pass
 
-    return ""
+    # Mengembalikan None untuk data yang tidak valid
+    return None
 
 @st.cache_data
 def is_relevant(title, query, content="", threshold=0.35):
@@ -321,7 +316,22 @@ def load_history_from_github():
         contents = repo.get_contents(st.secrets["file_path"])
         file_content = contents.decoded_content.decode('utf-8')
         data = json.loads(file_content)
-        return pd.DataFrame(data) if isinstance(data, list) and data else pd.DataFrame()
+        # Perbaikan: Menambahkan validasi data di sini
+        if isinstance(data, list):
+            valid_data = []
+            for item in data:
+                # Memeriksa apakah item adalah kamus dan memiliki kunci 'click_time'
+                if isinstance(item, dict) and 'click_time' in item:
+                    # Mencoba mengonversi 'click_time' untuk validasi
+                    try:
+                        datetime.strptime(item['click_time'], "%A, %d %B %Y %H:%M")
+                        valid_data.append(item)
+                    except ValueError:
+                        # Abaikan entri yang tidak valid
+                        continue
+            return pd.DataFrame(valid_data) if valid_data else pd.DataFrame()
+        else:
+            return pd.DataFrame()
     except Exception as e:
         st.error(f"Gagal memuat riwayat dari GitHub: {e}")
         return pd.DataFrame()
@@ -368,6 +378,7 @@ def get_recent_queries_by_days(user_id, df, days=3):
     jakarta_tz = pytz.timezone("Asia/Jakarta")
 
     # Konversi kolom 'click_time' ke datetime, dengan NaT untuk yang gagal.
+    # Baris ini sekarang lebih aman karena load_history_from_github sudah memvalidasi data.
     df_user["timestamp"] = pd.to_datetime(
         df_user["click_time"],
         format="%A, %d %B %Y %H:%M",
@@ -375,10 +386,8 @@ def get_recent_queries_by_days(user_id, df, days=3):
     )
 
     # Membuang semua baris yang gagal dikonversi (nilai NaT)
-    # Ini adalah perbaikan utama untuk mengatasi AttributeError.
     df_user = df_user.dropna(subset=['timestamp']).copy()
     
-    # Jika setelah filtering DataFrame menjadi kosong, kembalikan dict kosong
     if df_user.empty:
         return {}
         
@@ -395,7 +404,6 @@ def get_recent_queries_by_days(user_id, df, days=3):
     if recent_df.empty:
         return {}
     
-    # Sekarang kolom 'timestamp' sudah pasti bertipe datetime, sehingga .dt aman digunakan.
     recent_df.loc[:, 'date'] = recent_df['timestamp'].dt.strftime('%d %B %Y')
     grouped_queries = recent_df.groupby('date')['query'].unique().to_dict()
 
@@ -412,6 +420,7 @@ def build_training_data(user_id):
     user_data = [h for h in history_df.to_dict('records')
                  if h.get("user_id") == user_id and "label" in h and h.get("title") and h.get("content")]
     df = pd.DataFrame(user_data)
+    
     if df.empty or df["label"].nunique() < 2:
         return pd.DataFrame()
     train = []
@@ -558,26 +567,6 @@ def main():
                 st.info(f"Anda telah mencatat {len(st.session_state.clicked_urls_in_session)} artikel. Data akan disimpan saat Anda memulai pencarian baru.")
     else:
         st.info("Belum ada riwayat pencarian pada 3 hari terakhir.")
-
-
-def build_training_data(user_id):
-    history_df = load_history_from_github()
-    user_data = [h for h in history_df.to_dict('records')
-                 if h.get("user_id") == user_id and "label" in h and h.get("title") and h.get("content")]
-    df = pd.DataFrame(user_data)
-    if df.empty or df["label"].nunique() < 2:
-        return pd.DataFrame()
-    train = []
-    seen = set()
-    for _, row in df.iterrows():
-        title = str(row.get("title", ""))
-        content = str(row.get("content", ""))
-        text = preprocess_text(title + " " + content)
-        label = int(row.get("label", 0))
-        if text and text not in seen:
-            train.append({"text": text, "label": label})
-            seen.add(text)
-    return pd.DataFrame(train)
 
 if __name__ == "__main__":
     main()
