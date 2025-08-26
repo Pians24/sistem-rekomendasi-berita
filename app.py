@@ -382,7 +382,7 @@ def get_recent_queries_by_days(user_id, df, days=3):
     if recent_df.empty:
         return {}
     
-    recent_df.loc[:, 'date'] = recent_df['timestamp'].dt.strftime('%d %B %Y')
+    recent_df.loc[:, 'date'] = recent_df['timestamp'].dt.strftime('%d %B %Y') # Perbaikan SettingWithCopyWarning
     grouped_queries = recent_df.groupby('date')['query'].unique().to_dict()
     
     sorted_dates = sorted(
