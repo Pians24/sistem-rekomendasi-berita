@@ -360,7 +360,6 @@ def save_interaction_to_github(user_id, query, all_articles, clicked_urls):
         contents.sha
     )
 
-# Memindahkan definisi fungsi ini SEBELUM main()
 def get_recent_queries_by_days(user_id, df, days=3):
     """Mengembalikan dict terurut: { '25 Agustus 2025': ['gempa','pemilu',...], ... }"""
     if df.empty or "click_time" not in df.columns:
@@ -374,12 +373,10 @@ def get_recent_queries_by_days(user_id, df, days=3):
         errors='coerce'
     )
 
-    # Jika masih naive, setel zona waktu ke Asia/Jakarta
     if df_user["timestamp"].notna().any():
         try:
             df_user.loc[df_user["timestamp"].notna(), "timestamp"] = df_user.loc[df_user["timestamp"].notna(), "timestamp"].dt.tz_localize(jakarta_tz)
         except TypeError:
-            # Sudah memiliki zona waktu
             df_user["timestamp"] = df_user["timestamp"].dt.tz_convert(jakarta_tz)
 
     df_user = df_user.dropna(subset=['timestamp'])
@@ -402,11 +399,10 @@ def get_recent_queries_by_days(user_id, df, days=3):
     ordered_grouped_queries = {date: grouped_queries[date] for date in sorted_dates}
     return ordered_grouped_queries
 
-# === ALIAS agar tidak NameError di main() ===
-# Alias ini tidak lagi mutlak diperlukan jika get_recent_queries_by_days dipindahkan.
-# Namun, menyimpannya tidak merugikan dan mempertahankan struktur asli.
-def get_queries_grouped_by_date(user_id, df, days=3):
-    return get_recent_queries_by_days(user_id, df, days=days)
+# Perbaikan: Fungsi get_queries_grouped_by_date Dihapus dan diganti dengan panggilan langsung
+# def get_queries_grouped_by_date(user_id, df, days=3):
+#     return get_recent_queries_by_days(user_id, df, days=days)
+
 
 @st.cache_resource(show_spinner="Melatih model rekomendasi...")
 def train_model(df_train):
@@ -414,7 +410,7 @@ def train_model(df_train):
     y = df_train["label"].tolist()
     if len(set(y)) < 2:
         st.warning("⚠️ Gagal melatih model: hanya ada satu jenis label (perlu klik & tidak klik).")
-    return None
+        return None
     X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.3, random_state=42)
     clf = LogisticRegression(class_weight="balanced", max_iter=1000)
     clf.fit(X_train, y_train)
@@ -452,7 +448,6 @@ def recommend(df, query, clf, n_per_source=3):
 
         def top_n(x):
             return x.sort_values(by=['publishedAt_dt', 'final_score'], ascending=[False, False]).head(n_per_source)
-        # Hapus include_groups (agar kompatibel lintas versi pandas)
         top_n_per_source = df.groupby("source", group_keys=False).apply(top_n)
         return top_n_per_source.sort_values(by=['publishedAt_dt', 'final_score'], ascending=[False, False]).reset_index(drop=True)
     else:
@@ -462,30 +457,8 @@ def recommend(df, query, clf, n_per_source=3):
 
         def top_n_sim(x):
             return x.sort_values(by=['publishedAt_dt', 'similarity'], ascending=[False, False]).head(n_per_source)
-        # Hapus include_groups (agar kompatibel lintas versi pandas)
         top_n_per_source = df.groupby("source", group_keys=False).apply(top_n_sim)
         return top_n_per_source.sort_values(by=['publishedAt_dt', 'similarity'], ascending=[False, False]).reset_index(drop=True)
-
-# === DATA PELATIHAN dari riwayat GitHub ===
-def build_training_data(user_id):
-    history_df = load_history_from_github()
-    user_data = [h for h in history_df.to_dict('records')
-                 if h.get("user_id") == user_id and "label" in h and h.get("title") and h.get("content")]
-    df = pd.DataFrame(user_data)
-    if df.empty or df["label"].nunique() < 2:
-        return pd.DataFrame()
-    train = []
-    seen = set()
-    for _, row in df.iterrows():
-        title = str(row.get("title", ""))
-        content = str(row.get("content", ""))
-        text = preprocess_text(title + " " + content)
-        label = int(row.get("label", 0))
-        if text and text not in seen:
-            train.append({"text": text, "label": label})
-            seen.add(text)
-    return pd.DataFrame(train)
-
 
 def main():
     st.title("📰 Sistem Rekomendasi Berita")
@@ -522,7 +495,8 @@ def main():
 
     # --- PENCARIAN PER TANGGAL ---
     st.header("📚 Pencarian Berita per Tanggal")
-    grouped_queries = get_queries_grouped_by_date(USER_ID, st.session_state.history, days=3)
+    # Panggilan langsung ke fungsi aslinya
+    grouped_queries = get_recent_queries_by_days(USER_ID, st.session_state.history, days=3)
 
     if grouped_queries:
         for date, queries in grouped_queries.items():
@@ -564,6 +538,25 @@ def main():
     else:
         st.info("Belum ada riwayat pencarian pada 3 hari terakhir.")
 
+
+def build_training_data(user_id):
+    history_df = load_history_from_github()
+    user_data = [h for h in history_df.to_dict('records')
+                 if h.get("user_id") == user_id and "label" in h and h.get("title") and h.get("content")]
+    df = pd.DataFrame(user_data)
+    if df.empty or df["label"].nunique() < 2:
+        return pd.DataFrame()
+    train = []
+    seen = set()
+    for _, row in df.iterrows():
+        title = str(row.get("title", ""))
+        content = str(row.get("content", ""))
+        text = preprocess_text(title + " " + content)
+        label = int(row.get("label", 0))
+        if text and text not in seen:
+            train.append({"text": text, "label": label})
+            seen.add(text)
+    return pd.DataFrame(train)
 
 if __name__ == "__main__":
     main()
