@@ -132,46 +132,57 @@ def is_relevant(title, query, content="", threshold=0.35):
     sim = cosine_similarity(combined_vecs, query_vecs)[0][0]
     return sim >= threshold
 
-# 4. Scraper per sumber
+# 4. Scraper per sumber (DENGAN PENAMBAHAN RETRY DAN FALLBACK TANGGAL)
 @st.cache_data(show_spinner="Mencari berita di Detik...")
 def scrape_detik(query, max_articles=15):
     url = f"https://www.detik.com/search/searchall?query={query.replace(' ', '+')}"
     data = []
-    try:
-        res = requests.get(url, headers=HEADERS, timeout=10)
-        soup = BeautifulSoup(res.content, "html.parser")
-        articles_raw = soup.select("article.list-content__item")
-        for article in articles_raw:
-            try:
-                title_tag = article.find('h3', class_='media__title')
-                link = title_tag.a['href'] if title_tag and title_tag.a else ''
-                description_tag = article.find('div', class_='media__desc')
-                date_tag = article.find('div', class_='media__date').find('span') if article.find('div', class_='media__date') else None
-                
-                if not title_tag or not link:
-                    continue
-                
-                title = title_tag.get_text(strip=True)
-                description = description_tag.get_text(strip=True) if description_tag else ""
-                published_at = date_tag.get('title', '') if date_tag else ''
-                published_at = extract_datetime_from_title(published_at)
-                
-                if is_relevant(title, query, description):
-                    data.append({
-                        "source": get_source_from_url(link),
-                        "title": title,
-                        "description": description,
-                        "content": f"{title} {description}",
-                        "url": link,
-                        "publishedAt": published_at
-                    })
-            except Exception:
-                continue
-            if len(data) >= max_articles:
-                break
-    except Exception as e:
-        st.error(f"Gagal scraping dari Detik: {e}")
-    return pd.DataFrame(data)
+    
+    for _ in range(2):
+        try:
+            res = requests.get(url, headers=HEADERS, timeout=10)
+            if res.status_code == 200:
+                soup = BeautifulSoup(res.content, "html.parser")
+                articles_raw = soup.select("article.list-content__item")
+                for article in articles_raw:
+                    try:
+                        title_tag = article.find('h3', class_='media__title')
+                        link = title_tag.a['href'] if title_tag and title_tag.a else ''
+                        description_tag = article.find('div', class_='media__desc')
+                        date_tag = article.find('div', class_='media__date').find('span') if article.find('div', class_='media__date') else None
+                        
+                        if not title_tag or not link:
+                            continue
+                        
+                        title = title_tag.get_text(strip=True)
+                        description = description_tag.get_text(strip=True) if description_tag else ""
+                        published_at = date_tag.get('title', '') if date_tag else ''
+                        published_at = extract_datetime_from_title(published_at)
+                        
+                        if not published_at:
+                            jakarta_tz = pytz.timezone("Asia/Jakarta")
+                            published_at = datetime.now(jakarta_tz).strftime("%Y-%m-%d %H:%M")
+                        
+                        if is_relevant(title, query, description):
+                            data.append({
+                                "source": get_source_from_url(link),
+                                "title": title,
+                                "description": description,
+                                "content": f"{title} {description}",
+                                "url": link,
+                                "publishedAt": published_at
+                            })
+                    except Exception:
+                        continue
+                    if len(data) >= max_articles:
+                        break
+                return pd.DataFrame(data)
+            else:
+                time.sleep(2)
+        except (requests.exceptions.RequestException, Exception):
+            time.sleep(2)
+    
+    return pd.DataFrame()
 
 @st.cache_data(show_spinner="Mencari berita di CNN...")
 def scrape_cnn_fixed(query, max_results=10):
@@ -181,110 +192,102 @@ def scrape_cnn_fixed(query, max_results=10):
         "https://www.cnnindonesia.com/ekonomi/rss",
     ]
     results = []
+    
     for feed_url in feed_urls:
-        feed = feedparser.parse(feed_url)
-        for entry in getattr(feed, "entries", []):
-            title = entry.title.strip()
-            link = entry.link
-            summary = getattr(entry, "summary", "").strip()
-            published = getattr(entry, "published", "")
-            combined_text = f"{title} {summary} {link}".lower()
-            if query.lower() in combined_text:
-                try:
-                    dt = datetime.strptime(published, "%a, %d %b %Y %H:%M:%S %z").astimezone(pytz.timezone("Asia/Jakarta"))
-                    published_at = dt.strftime("%Y-%m-%d %H:%M")
-                except:
-                    published_at = datetime.now(pytz.timezone("Asia/Jakarta")).strftime("%Y-%m-%d %H:%M")
-                results.append({
-                    "source": get_source_from_url(link),
-                    "title": title,
-                    "description": summary,
-                    "content": f"{title} {summary}",
-                    "url": link,
-                    "publishedAt": published_at
-                })
-                if len(results) >= max_results:
-                    break
-        if len(results) >= max_results:
-            break
-
-    # fallback tag page jika RSS tidak mengandung query
-    if not results:
         try:
-            tag = query.lower().replace(" ", "-")
-            tag_url = f"https://www.cnnindonesia.com/tag/{tag}"
-            resp = requests.get(tag_url, headers=HEADERS, timeout=10)
-            soup = BeautifulSoup(resp.text, "html.parser")
-            items = soup.select("article.list_category .media__title a")
-            for a in items[:max_results]:
-                link = a["href"]
-                title = a.get_text(strip=True)
-                if not link.startswith("http"):
-                    link = "https:" + link
-                results.append({
-                    "source": get_source_from_url(link),
-                    "title": title,
-                    "description": "",
-                    "content": title,
-                    "url": link,
-                    "publishedAt": ""
-                })
-        except Exception as e:
-            st.error(f"Gagal scraping dari CNN: {e}")
+            feed = feedparser.parse(feed_url, timeout=10)
+            if feed.entries:
+                for entry in feed.entries:
+                    title = entry.title.strip()
+                    link = entry.link
+                    summary = getattr(entry, "summary", "").strip()
+                    published = getattr(entry, "published", "")
+                    
+                    published_at = ""
+                    try:
+                        dt = datetime.strptime(published, "%a, %d %b %Y %H:%M:%S %z").astimezone(pytz.timezone("Asia/Jakarta"))
+                        published_at = dt.strftime("%Y-%m-%d %H:%M")
+                    except:
+                        jakarta_tz = pytz.timezone("Asia/Jakarta")
+                        published_at = datetime.now(jakarta_tz).strftime("%Y-%m-%d %H:%M")
+
+                    if is_relevant(title, query, summary):
+                        results.append({
+                            "source": get_source_from_url(link),
+                            "title": title,
+                            "description": summary,
+                            "content": f"{title} {summary}",
+                            "url": link,
+                            "publishedAt": published_at
+                        })
+                        if len(results) >= max_results:
+                            return pd.DataFrame(results)
+        except Exception:
+            continue
+
     return pd.DataFrame(results)
 
 @st.cache_data(show_spinner="Mencari berita di Kompas...")
 def scrape_kompas_fixed(query, max_articles=10):
     search_url = f"https://search.kompas.com/search?q={query.replace(' ', '+')}"
     data = []
-    try:
-        res = requests.get(search_url, headers=HEADERS, timeout=10)
-        soup = BeautifulSoup(res.text, "html.parser")
-        articles = soup.select("div.articleItem")[:max_articles]
-        if not articles:
-            return pd.DataFrame()
-        for item in articles:
-            try:
-                a_tag = item.select_one("a.article-link")
-                title_tag = item.select_one("h2.articleTitle")
-                if not a_tag or not title_tag:
-                    continue
-                url = a_tag["href"]
-                title = title_tag.get_text(strip=True)
+    
+    for _ in range(2):
+        try:
+            res = requests.get(search_url, headers=HEADERS, timeout=10)
+            if res.status_code == 200:
+                soup = BeautifulSoup(res.text, "html.parser")
+                articles = soup.select("div.articleItem")[:max_articles]
+                if not articles:
+                    return pd.DataFrame()
+                for item in articles:
+                    try:
+                        a_tag = item.select_one("a.article-link")
+                        title_tag = item.select_one("h2.articleTitle")
+                        if not a_tag or not title_tag:
+                            continue
+                        url = a_tag["href"]
+                        title = title_tag.get_text(strip=True)
 
-                # ambil isi ringkas untuk konteks
-                time.sleep(random.uniform(1, 2))
-                art_res = requests.get(url, headers=HEADERS, timeout=10)
-                art_soup = BeautifulSoup(art_res.text, "html.parser")
-                content_paras = art_soup.select("div.read__content > p")
-                content = " ".join([p.get_text(strip=True) for p in content_paras])
+                        time.sleep(random.uniform(1, 2))
+                        art_res = requests.get(url, headers=HEADERS, timeout=10)
+                        art_soup = BeautifulSoup(art_res.text, "html.parser")
+                        content_paras = art_soup.select("div.read__content > p")
+                        content = " ".join([p.get_text(strip=True) for p in content_paras])
 
-                time_tag = art_soup.select_one("div.read__time")
-                published = extract_datetime_from_title(time_tag.get_text(strip=True)) if time_tag else ""
+                        time_tag = art_soup.select_one("div.read__time")
+                        published = extract_datetime_from_title(time_tag.get_text(strip=True)) if time_tag else ""
 
-                # Perbaikan regex: pakai \d (bukan \\d) saat fallback ambil tanggal dari URL
-                if (not published) or published.endswith("00:00"):
-                    url_match = re.search(r"/(\d{4})/(\d{2})/(\d{2})/(\d{2})(\d{2})", url)
-                    if url_match:
-                        y, m, d, h, mi = url_match.groups()
-                        dt = datetime.strptime(f"{y}-{m}-{d} {h}:{mi}", "%Y-%m-%d %H:%M")
-                        dt = pytz.timezone("Asia/Jakarta").localize(dt)
-                        published = dt.strftime("%Y-%m-%d %H:%M")
+                        if (not published) or published.endswith("00:00"):
+                            url_match = re.search(r"/(\d{4})/(\d{2})/(\d{2})/(\d{2})(\d{2})", url)
+                            if url_match:
+                                y, m, d, h, mi = url_match.groups()
+                                dt = datetime.strptime(f"{y}-{m}-{d} {h}:{mi}", "%Y-%m-%d %H:%M")
+                                dt = pytz.timezone("Asia/Jakarta").localize(dt)
+                                published = dt.strftime("%Y-%m-%d %H:%M")
+                        
+                        if not published:
+                            jakarta_tz = pytz.timezone("Asia/Jakarta")
+                            published = datetime.now(jakarta_tz).strftime("%Y-%m-%d %H:%M")
 
-                if is_relevant(title, query, content):
-                    data.append({
-                        "source": get_source_from_url(link),
-                        "title": title,
-                        "description": "",
-                        "content": content,
-                        "url": url,
-                        "publishedAt": published
-                    })
-            except Exception:
-                continue
-    except Exception as e:
-        st.error(f"Gagal scraping dari Kompas: {e}")
-    return pd.DataFrame(data)
+                        if is_relevant(title, query, content):
+                            data.append({
+                                "source": get_source_from_url(url), 
+                                "title": title,
+                                "description": "",
+                                "content": content,
+                                "url": url,
+                                "publishedAt": published
+                            })
+                    except Exception:
+                        continue
+                return pd.DataFrame(data)
+            else:
+                time.sleep(2)
+        except (requests.exceptions.RequestException, Exception):
+            time.sleep(2)
+    
+    return pd.DataFrame()
 
 @st.cache_data(show_spinner="Menggabungkan hasil...")
 def scrape_all_sources(query):
@@ -304,7 +307,6 @@ def scrape_all_sources(query):
     else:
         return pd.DataFrame()
 
-
 # --- FUNGSI UNTUK GITHUB API ---
 @st.cache_resource(ttl=60)
 def get_github_client():
@@ -317,7 +319,6 @@ def load_history_from_github():
         repo = g.get_user(st.secrets["repo_owner"]).get_repo(st.secrets["repo_name"])
         contents = repo.get_contents(st.secrets["file_path"])
         
-        # GitHub API mengembalikan konten sebagai string base64, jadi harus didecode
         file_content = contents.decoded_content.decode('utf-8')
         data = json.loads(file_content)
         
@@ -330,7 +331,6 @@ def save_interaction_to_github(user_id, query, all_articles, clicked_urls):
     g = get_github_client()
     repo = g.get_user(st.secrets["repo_owner"]).get_repo(st.secrets["repo_name"])
     
-    # Baca riwayat yang sudah ada
     try:
         contents = repo.get_contents(st.secrets["file_path"])
         history_str = contents.decoded_content.decode('utf-8')
@@ -353,7 +353,6 @@ def save_interaction_to_github(user_id, query, all_articles, clicked_urls):
         }
         history_list.append(article_log)
     
-    # Enkode konten yang diperbarui dan unggah ke GitHub
     updated_content = json.dumps(history_list, indent=2)
     repo.update_file(
         st.secrets["file_path"],
@@ -378,35 +377,22 @@ def get_recent_queries_by_days(user_id, df, days=3):
     
     now = datetime.now(jakarta_tz)
     cutoff_time = now - timedelta(days=days)
-    recent_df = df_user[df_user["timestamp"] >= cutoff_time]
+    recent_df = df_user[df_user["timestamp"] >= cutoff_time].copy()
     
     if recent_df.empty:
-        return []
+        return {}
     
-    unique_searches = recent_df[['query', 'timestamp']].drop_duplicates().sort_values('timestamp', ascending=False)
-    return list(zip(unique_searches["query"], unique_searches["timestamp"].dt.strftime("%A, %d %B %Y %H:%M")))
-
-def get_most_frequent_topics(user_id, df, days=3):
-    if df.empty or "click_time" not in df.columns:
-        return []
-    df_user = df[df["user_id"] == user_id].copy()
-    jakarta_tz = pytz.timezone("Asia/Jakarta")
-    df_user["timestamp"] = pd.to_datetime(
-        df_user["click_time"],
-        format="%A, %d %B %Y %H:%M",
-        errors='coerce'
-    ).dt.tz_localize(jakarta_tz, ambiguous='NaT', nonexistent='NaT')
-    df_user = df_user.dropna(subset=['timestamp'])
+    recent_df.loc[:, 'date'] = recent_df['timestamp'].dt.strftime('%d %B %Y')
+    grouped_queries = recent_df.groupby('date')['query'].unique().to_dict()
     
-    now = datetime.now(jakarta_tz)
-    cutoff_time = now - timedelta(days=days)
-    recent_df = df_user[df_user["timestamp"] >= cutoff_time]
-    if recent_df.empty:
-        return []
-
-    query_counts = Counter(recent_df['query'])
-    sorted_queries = sorted(query_counts.items(), key=lambda item: item[1], reverse=True)
-    return sorted_queries
+    sorted_dates = sorted(
+        grouped_queries.keys(), 
+        key=lambda d: datetime.strptime(d, '%d %B %Y'), 
+        reverse=True
+    )
+    
+    ordered_grouped_queries = {date: grouped_queries[date] for date in sorted_dates}
+    return ordered_grouped_queries
 
 def build_training_data(user_id):
     history_df = load_history_from_github()
@@ -451,11 +437,9 @@ def recommend(df, query, clf, n_per_source=3):
     df = df.copy()
     df.drop_duplicates(subset=['url'], inplace=True)
 
-    # representasi berdasarkan teks apa adanya (tanpa stopwords)
     df["processed"] = df.apply(lambda row: preprocess_text(row['title'] + ' ' + row.get('content', '')), axis=1)
     vec = model_sbert.encode(df["processed"].tolist())
 
-    # simpan vektor sementara agar tidak mismatch setelah dropna
     df['publishedAt_dt'] = pd.to_datetime(df['publishedAt'], errors='coerce')
     df['vec_temp'] = list(vec)
     df = df.dropna(subset=['publishedAt_dt'])
@@ -484,36 +468,6 @@ def recommend(df, query, clf, n_per_source=3):
             return x.sort_values(by=['publishedAt_dt', 'similarity'], ascending=[False, False]).head(n_per_source)
         top_n_per_source = df.groupby("source", group_keys=False).apply(top_n_sim, include_groups=False)
         return top_n_per_source.sort_values(by=['publishedAt_dt', 'similarity'], ascending=[False, False]).reset_index(drop=True)
-
-# --- FUNGSI BARU UNTUK MENGELOMPOKKAN RIWAYAT BERDASARKAN TANGGAL ---
-def get_queries_grouped_by_date(user_id, df, days=3):
-    if df.empty or "click_time" not in df.columns:
-        return {}
-    df_user = df[df["user_id"] == user_id].copy()
-    jakarta_tz = pytz.timezone("Asia/Jakarta")
-    df_user["timestamp"] = pd.to_datetime(
-        df_user["click_time"],
-        format="%A, %d %B %Y %H:%M",
-        errors='coerce'
-    ).dt.tz_localize(jakarta_tz, ambiguous='NaT', nonexistent='NaT')
-    df_user = df_user.dropna(subset=['timestamp'])
-    now = datetime.now(jakarta_tz)
-    cutoff_time = now - timedelta(days=days)
-    recent_df = df_user[df_user["timestamp"] >= cutoff_time].copy()
-    if recent_df.empty:
-        return {}
-    
-    recent_df['date'] = recent_df['timestamp'].dt.strftime('%d %B %Y')
-    grouped_queries = recent_df.groupby('date')['query'].unique().to_dict()
-    
-    sorted_dates = sorted(
-        grouped_queries.keys(), 
-        key=lambda d: datetime.strptime(d, '%d %B %Y'), 
-        reverse=True
-    )
-    
-    ordered_grouped_queries = {date: grouped_queries[date] for date in sorted_dates}
-    return ordered_grouped_queries
 
 def main():
     st.title("📰 Sistem Rekomendasi Berita")
@@ -571,100 +525,27 @@ def main():
                     else:
                         for i, row in results.iterrows():
                             source_name = get_source_from_url(row['url'])
-                            st.markdown(f"**[{source_name}]** {row['title']}")
-                            st.markdown(row['url'])
+                            
+                            if 'url' in row and row['url']:
+                                st.markdown(f"**[{source_name}]** {row['title']}")
+                                st.markdown(f"[{row['url']}]({row['url']})")
+                            else:
+                                st.markdown(f"**[{source_name}]** {row['title']}")
+                                st.info("Tautan tidak tersedia.")
+
                             st.write(f"Waktu: *{row['publishedAt']}*")
                             skor_key = 'final_score' if 'final_score' in row else 'similarity'
                             st.write(f"Skor: `{row[skor_key]:.2f}`")
+                            
+                            key_link = f"link_{i}_{row.get('url', 'no_url')}"
+                            if st.button(f"Catat Interaksi", key=key_link):
+                                st.session_state.clicked_urls_in_session.append(row['url'])
+                                st.toast("Interaksi Anda telah dicatat untuk sesi ini.")
+                                
                             st.markdown("---")
-    else:
-        st.info("📭 Tidak ada riwayat pencarian dalam 3 hari terakhir.")
-
-    st.markdown("---")
-    
-    # --- REKOMENDASI HARI INI ---
-    st.header("🔥 Rekomendasi Berita Hari Ini")
-    most_frequent_topics = get_most_frequent_topics(USER_ID, st.session_state.history, days=3)
-    if most_frequent_topics:
-        q, count = most_frequent_topics[0]
-        with st.spinner('Mencari berita...'):
-            df_news = scrape_all_sources(q)
-        if df_news.empty:
-            st.info("❗ Tidak ditemukan berita.")
-        else:
-            results = recommend(df_news, q, clf, n_per_source=1)
-            if results.empty:
-                st.info("❗ Tidak ada hasil relevan.")
-            else:
-                for i, row in results.iterrows():
-                    source_name = get_source_from_url(row['url'])
-                    st.markdown(f"**[{source_name}]** {row['title']}")
-                    st.markdown(row['url'])
-                    st.write(f"Waktu: *{row['publishedAt']}*")
-                    skor_key = 'final_score' if 'final_score' in row else 'similarity'
-                    st.write(f"Skor: `{row[skor_key]:.2f}`")
-                    st.markdown("---")
-    else:
-        st.info("🔥 Tidak ada topik yang sering dicari dalam 3 hari terakhir.")
-
-    st.markdown("---")
-    
-    # --- PENCARIAN BERITA ---
-    st.header("🔍 Pencarian Berita")
-    search_query = st.text_input("Ketik topik berita yang ingin Anda cari:", key="search_input")
-
-    if st.button("Cari Berita"):
-        if search_query:
-            if 'current_query' in st.session_state and st.session_state.current_query:
-                save_interaction_to_github(USER_ID, st.session_state.current_query, st.session_state.current_recommended_results, st.session_state.clicked_urls_in_session)
-                load_history_from_github.clear()
-                st.session_state.history = load_history_from_github()
-            
-            with st.spinner('Mengambil berita dan merekomendasikan...'):
-                st.session_state.current_search_results = scrape_all_sources(search_query)
-                results = recommend(st.session_state.current_search_results, search_query, clf, n_per_source=3)
-                st.session_state.current_recommended_results = results
-            
-            st.session_state.show_results = True
-            st.session_state.current_query = search_query
-            st.session_state.clicked_urls_in_session = []
-            st.rerun()
-        else:
-            st.warning("Mohon masukkan topik pencarian.")
-
-    if st.session_state.show_results:
-        st.subheader(f"📌 Hasil untuk '{st.session_state.current_query}'")
-        
-        if st.session_state.current_recommended_results.empty:
-            st.warning("❗ Tidak ada hasil yang relevan. Coba kata kunci lain.")
-        else:
-            for i, row in st.session_state.current_recommended_results.iterrows():
-                source_name = get_source_from_url(row['url'])
-                
-                # --- PERUBAHAN UTAMA DI SINI ---
-                if 'url' in row and row['url']:
-                    st.markdown(f"**[{source_name}]** {row['title']}")
-                    st.markdown(row['url'])
-                else:
-                    st.markdown(f"**[{source_name}]** {row['title']}")
-                    st.info("Tautan tidak tersedia.")
-
-                st.write(f"Waktu: *{row['publishedAt']}*")
-                skor_key = 'final_score' if 'final_score' in row else 'similarity'
-                st.write(f"Skor: `{row[skor_key]:.2f}`")
-                
-                # Tambahkan tombol untuk mencatat klik yang mengarah ke link
-                key_link = f"link_{i}_{row.get('url', 'no_url')}"
-                if st.button(f"Baca Selenography", key=key_link):
-                    st.session_state.clicked_urls_in_session.append(row['url'])
-                    st.toast("Interaksi Anda telah dicatat untuk sesi ini.")
-                    # Setelah ini, browser akan otomatis mengarah ke link
-                    st.markdown(f"<meta http-equiv='refresh' content='0; url={row['url']}'>", unsafe_allow_html=True)
-                
-                st.markdown("---")
             
             if st.session_state.current_query:
-                st.info(f"Anda telah mengklik {len(st.session_state.clicked_urls_in_session)} artikel. Sesi ini akan disimpan saat Anda memulai pencarian baru.")
+                st.info(f"Anda telah mencatat {len(st.session_state.clicked_urls_in_session)} artikel. Data akan disimpan saat Anda memulai pencarian baru.")
 
 if __name__ == "__main__":
     main()
