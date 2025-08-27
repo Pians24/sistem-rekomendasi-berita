@@ -24,6 +24,7 @@ import streamlit.components.v1 as components
 st.set_page_config(page_title="Sistem Rekomendasi Berita", layout="wide")
 
 # --- Inisialisasi Session State di awal skrip ---
+# Ini adalah langkah penting untuk mencegah error seperti KeyError atau AttributeError.
 if 'history' not in st.session_state:
     st.session_state.history = pd.DataFrame()
 if 'current_search_results' not in st.session_state:
@@ -247,48 +248,11 @@ def scrape_cnn_fixed(query, max_results=10):
                 if len(results) >= max_results:
                     return pd.DataFrame(results)
     except Exception as e:
-        st.warning(f"Gagal scraping CNN: {e}")
+        st.warning(f"Gagal scraping CNN: {e}. Mengembalikan DataFrame kosong.")
         time.sleep(random.uniform(1, 3))
 
-    if not results:
-        feed_urls = [
-            "https://www.cnnindonesia.com/nasional/rss",
-            "https://www.cnnindonesia.com/internasional/rss",
-            "https://www.cnnindonesia.com/ekonomi/rss",
-        ]
-        for feed_url in feed_urls:
-            try:
-                feed = feedparser.parse(feed_url)
-                if feed.entries:
-                    for entry in feed.entries:
-                        title = entry.title.strip()
-                        link = entry.link
-                        summary = getattr(entry, "summary", "").strip()
-                        published = getattr(entry, "published", "")
-
-                        published_at = ""
-                        try:
-                            dt = datetime.strptime(published, "%a, %d %b %Y %H:%M:%S %z").astimezone(pytz.timezone("Asia/Jakarta"))
-                            published_at = dt.strftime("%Y-%m-%d %H:%M")
-                        except:
-                            jakarta_tz = pytz.timezone("Asia/Jakarta")
-                            published_at = datetime.now(jakarta_tz).strftime("%Y-%m-%d %H:%M")
-
-                        if is_relevant(title, query, summary):
-                            results.append({
-                                "source": get_source_from_url(link),
-                                "title": title,
-                                "description": summary,
-                                "content": f"{title} {summary}",
-                                "url": link,
-                                "publishedAt": published_at
-                            })
-                        if len(results) >= max_results:
-                            return pd.DataFrame(results)
-            except Exception:
-                continue
-
     return pd.DataFrame(results)
+
 
 @st.cache_data(show_spinner="Mencari berita di Kompas...")
 def scrape_kompas_fixed(query, max_articles=10):
@@ -777,7 +741,6 @@ def main():
         if st.session_state.current_query:
             st.info(f"Anda telah mencatat {len(st.session_state.clicked_urls_in_session)} artikel. Data akan disimpan saat Anda memulai pencarian baru.")
 
-# Blok kode untuk menerima pesan dari JavaScript
 def on_message(message):
     if 'url' in message:
         st.session_state.url_from_js = message['url']
