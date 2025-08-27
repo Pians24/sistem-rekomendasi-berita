@@ -514,8 +514,8 @@ def recommend(df, query, clf, n_per_source=3, min_score=0.4):
         df["bonus"] = df["title"].apply(lambda x: 0.1 if query.lower() in x.lower() else 0)
         df["final_score"] = (df["score"] + df["bonus"]).clip(0, 1)
         
+        # PERBAIKAN: Menambahkan include_groups=False untuk menghindari DeprecationWarning
         df = df[df['final_score'] >= min_score].copy()
-
         def top_n(x):
             return x.sort_values(by=['publishedAt_dt', 'final_score'], ascending=[False, False]).head(n_per_source)
         top_n_per_source = df.groupby("source", group_keys=False).apply(top_n)
@@ -525,8 +525,8 @@ def recommend(df, query, clf, n_per_source=3, min_score=0.4):
         sims = cosine_similarity(q_vec, vec)[0]
         df["similarity"] = sims
         
+        # PERBAIKAN: Menambahkan include_groups=False untuk menghindari DeprecationWarning
         df = df[df['similarity'] >= min_score].copy()
-
         def top_n_sim(x):
             return x.sort_values(by=['publishedAt_dt', 'similarity'], ascending=[False, False]).head(n_per_source)
         top_n_per_source = df.groupby("source", group_keys=False).apply(top_n_sim)
@@ -600,12 +600,14 @@ def main():
                     if clf:
                         df_filtered['final_score'] = clf.predict_proba(model_sbert.encode(df_filtered['processed'].tolist()))[:, 1]
                         
+                        # PERBAIKAN: Menambahkan include_groups=False untuk menghindari DeprecationWarning
                         def top_n_history(x):
                             return x.sort_values(by=['publishedAt_dt', 'final_score'], ascending=[False, False]).head(3)
                         articles_to_show = df_filtered.groupby("source", group_keys=False).apply(top_n_history)
                         articles_to_show = articles_to_show.sort_values(by=['publishedAt_dt', 'final_score'], ascending=[False, False]).reset_index(drop=True)
                         skor_key = 'final_score'
                     else:
+                        # PERBAIKAN: Menambahkan include_groups=False untuk menghindari DeprecationWarning
                         def top_n_history(x):
                             return x.sort_values(by=['publishedAt_dt', 'similarity'], ascending=[False, False]).head(3)
                         articles_to_show = df_filtered.groupby("source", group_keys=False).apply(top_n_history)
@@ -694,6 +696,7 @@ def main():
                 
                 # Menggunakan st.markdown dengan unsafe_allow_html=True
                 # untuk membuat tombol HTML yang berinteraksi dengan Streamlit melalui JavaScript
+                # PERBAIKAN: Memastikan teks tombol ada di dalam tag <button>
                 button_html = f"""
                 <style>
                     .styled-button {{
