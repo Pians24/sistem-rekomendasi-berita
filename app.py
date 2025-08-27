@@ -192,47 +192,88 @@ def scrape_detik(query, max_articles=15):
 
 @st.cache_data(show_spinner="Mencari berita di CNN...")
 def scrape_cnn_fixed(query, max_results=10):
-    feed_urls = [
-        "https://www.cnnindonesia.com/nasional/rss",
-        "https://www.cnnindonesia.com/internasional/rss",
-        "https://www.cnnindonesia.com/ekonomi/rss",
-    ]
+    url = f"https://www.cnnindonesia.com/search?query={query.replace(' ', '+')}"
     results = []
     
-    for feed_url in feed_urls:
-        try:
-            feed = feedparser.parse(feed_url)
-            if feed.entries:
-                for entry in feed.entries:
-                    title = entry.title.strip()
-                    link = entry.link
-                    summary = getattr(entry, "summary", "").strip()
-                    published = getattr(entry, "published", "")
+    try:
+        headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/108.0.0.0 Safari/537.36"}
+        res = requests.get(url, headers=headers, timeout=10)
+        
+        if res.status_code == 200:
+            soup = BeautifulSoup(res.content, 'html.parser')
+            articles = soup.find_all('article', class_='box--card')
+            
+            for article in articles:
+                link_tag = article.find('a', class_='box--card__link')
+                if not link_tag:
+                    continue
+                
+                link = link_tag['href']
+                title = link_tag.find('span', class_='box--card__title').get_text(strip=True) if link_tag.find('span', class_='box--card__title') else ""
+                summary = article.find('span', class_='box--card__desc').get_text(strip=True) if article.find('span', class_='box--card__desc') else ""
+                published = article.find('span', class_='box--card__date').get_text(strip=True) if article.find('span', class_='box--card__date') else ""
+                
+                published_at = extract_datetime_from_title(published)
+                
+                if not published_at:
+                    jakarta_tz = pytz.timezone("Asia/Jakarta")
+                    published_at = datetime.now(jakarta_tz).strftime("%Y-%m-%d %H:%M")
 
-                    published_at = ""
-                    try:
-                        dt = datetime.strptime(published, "%a, %d %b %Y %H:%M:%S %z").astimezone(pytz.timezone("Asia/Jakarta"))
-                        published_at = dt.strftime("%Y-%m-%d %H:%M")
-                    except:
-                        jakarta_tz = pytz.timezone("Asia/Jakarta")
-                        published_at = datetime.now(jakarta_tz).strftime("%Y-%m-%d %H:%M")
+                if is_relevant(title, query, summary):
+                    results.append({
+                        "source": get_source_from_url(link),
+                        "title": title,
+                        "description": summary,
+                        "content": f"{title} {summary}",
+                        "url": link,
+                        "publishedAt": published_at
+                    })
+                if len(results) >= max_results:
+                    return pd.DataFrame(results)
+    except Exception as e:
+        st.warning(f"Gagal scraping CNN: {e}")
+        time.sleep(random.uniform(1, 3))
 
-                    if is_relevant(title, query, summary):
-                        results.append({
-                            "source": get_source_from_url(link),
-                            "title": title,
-                            "description": summary,
-                            "content": f"{title} {summary}",
-                            "url": link,
-                            "publishedAt": published_at
-                        })
-                    if len(results) >= max_results:
-                        return pd.DataFrame(results)
-        except Exception:
-            continue
+    if not results:
+        feed_urls = [
+            "https://www.cnnindonesia.com/nasional/rss",
+            "https://www.cnnindonesia.com/internasional/rss",
+            "https://www.cnnindonesia.com/ekonomi/rss",
+        ]
+        for feed_url in feed_urls:
+            try:
+                feed = feedparser.parse(feed_url)
+                if feed.entries:
+                    for entry in feed.entries:
+                        title = entry.title.strip()
+                        link = entry.link
+                        summary = getattr(entry, "summary", "").strip()
+                        published = getattr(entry, "published", "")
+
+                        published_at = ""
+                        try:
+                            dt = datetime.strptime(published, "%a, %d %b %Y %H:%M:%S %z").astimezone(pytz.timezone("Asia/Jakarta"))
+                            published_at = dt.strftime("%Y-%m-%d %H:%M")
+                        except:
+                            jakarta_tz = pytz.timezone("Asia/Jakarta")
+                            published_at = datetime.now(jakarta_tz).strftime("%Y-%m-%d %H:%M")
+
+                        if is_relevant(title, query, summary):
+                            results.append({
+                                "source": get_source_from_url(link),
+                                "title": title,
+                                "description": summary,
+                                "content": f"{title} {summary}",
+                                "url": link,
+                                "publishedAt": published_at
+                            })
+                        if len(results) >= max_results:
+                            return pd.DataFrame(results)
+            except Exception:
+                continue
+
     return pd.DataFrame(results)
 
-# --- FUNGSI KOMPAS YANG DIPERBARUI ---
 @st.cache_data(show_spinner="Mencari berita di Kompas...")
 def scrape_kompas_fixed(query, max_articles=10):
     search_url = f"https://search.kompas.com/search?q={query.replace(' ', '+')}"
@@ -514,8 +555,8 @@ def recommend(df, query, clf, n_per_source=3, min_score=0.4):
         df["bonus"] = df["title"].apply(lambda x: 0.1 if query.lower() in x.lower() else 0)
         df["final_score"] = (df["score"] + df["bonus"]).clip(0, 1)
         
-        # PERBAIKAN: Menambahkan include_groups=False untuk menghindari DeprecationWarning
         df = df[df['final_score'] >= min_score].copy()
+
         def top_n(x):
             return x.sort_values(by=['publishedAt_dt', 'final_score'], ascending=[False, False]).head(n_per_source)
         top_n_per_source = df.groupby("source", group_keys=False).apply(top_n)
@@ -525,14 +566,13 @@ def recommend(df, query, clf, n_per_source=3, min_score=0.4):
         sims = cosine_similarity(q_vec, vec)[0]
         df["similarity"] = sims
         
-        # PERBAIKAN: Menambahkan include_groups=False untuk menghindari DeprecationWarning
         df = df[df['similarity'] >= min_score].copy()
+
         def top_n_sim(x):
             return x.sort_values(by=['publishedAt_dt', 'similarity'], ascending=[False, False]).head(n_per_source)
         top_n_per_source = df.groupby("source", group_keys=False).apply(top_n_sim)
         return top_n_per_source.sort_values(by=['publishedAt_dt', 'similarity'], ascending=[False, False]).reset_index(drop=True)
 
-# Fungsi untuk menangani interaksi dari JavaScript
 def handle_js_click(url):
     if url not in st.session_state.clicked_urls_in_session:
         st.session_state.clicked_urls_in_session.append(url)
@@ -600,17 +640,15 @@ def main():
                     if clf:
                         df_filtered['final_score'] = clf.predict_proba(model_sbert.encode(df_filtered['processed'].tolist()))[:, 1]
                         
-                        # PERBAIKAN: Menambahkan include_groups=False untuk menghindari DeprecationWarning
                         def top_n_history(x):
                             return x.sort_values(by=['publishedAt_dt', 'final_score'], ascending=[False, False]).head(3)
-                        articles_to_show = df_filtered.groupby("source", group_keys=False).apply(top_n_history)
+                        articles_to_show = df_filtered.groupby("source", group_keys=False).apply(top_n_history, include_groups=False)
                         articles_to_show = articles_to_show.sort_values(by=['publishedAt_dt', 'final_score'], ascending=[False, False]).reset_index(drop=True)
                         skor_key = 'final_score'
                     else:
-                        # PERBAIKAN: Menambahkan include_groups=False untuk menghindari DeprecationWarning
                         def top_n_history(x):
                             return x.sort_values(by=['publishedAt_dt', 'similarity'], ascending=[False, False]).head(3)
-                        articles_to_show = df_filtered.groupby("source", group_keys=False).apply(top_n_history)
+                        articles_to_show = df_filtered.groupby("source", group_keys=False).apply(top_n_history, include_groups=False)
                         articles_to_show = articles_to_show.sort_values(by=['publishedAt_dt', 'similarity'], ascending=[False, False]).reset_index(drop=True)
                         skor_key = 'similarity'
 
@@ -694,9 +732,6 @@ def main():
             for i, row in st.session_state.current_recommended_results.iterrows():
                 source_name = get_source_from_url(row['url'])
                 
-                # Menggunakan st.markdown dengan unsafe_allow_html=True
-                # untuk membuat tombol HTML yang berinteraksi dengan Streamlit melalui JavaScript
-                # PERBAIKAN: Memastikan teks tombol ada di dalam tag <button>
                 button_html = f"""
                 <style>
                     .styled-button {{
@@ -732,17 +767,12 @@ def main():
                 skor_key = 'final_score' if 'final_score' in row else 'similarity'
                 st.write(f"Skor: `{row[skor_key]:.2f}`")
                 
-                # Sematkan tombol kustom
                 st.markdown(button_html, unsafe_allow_html=True)
 
                 st.markdown("---")
         
         if st.session_state.current_query:
             st.info(f"Anda telah mencatat {len(st.session_state.clicked_urls_in_session)} artikel. Data akan disimpan saat Anda memulai pencarian baru.")
-
-# Blok kode untuk menerima pesan dari JavaScript
-if 'url_from_js' not in st.session_state:
-    st.session_state.url_from_js = None
 
 def on_message(message):
     if 'url' in message:
