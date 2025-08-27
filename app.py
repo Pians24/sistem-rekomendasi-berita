@@ -448,7 +448,7 @@ def get_recent_queries_by_days(user_id, df, days=3):
     ordered_grouped_queries = {date: grouped_queries[date] for date in sorted_dates}
     return ordered_grouped_queries
 
-def get_most_frequent_topics(user_id, df, days=3):
+def get_most_frequent_topics(user_id, df, days=3, num_topics=3):
     if df.empty or "click_time" not in df.columns:
         return []
     df_user = df[df["user_id"] == user_id].copy()
@@ -470,7 +470,8 @@ def get_most_frequent_topics(user_id, df, days=3):
 
     query_counts = Counter(recent_df['query'])
     sorted_queries = sorted(query_counts.items(), key=lambda item: item[1], reverse=True)
-    return sorted_queries
+    
+    return sorted_queries[:num_topics] # PERBAIKAN: Mengembalikan beberapa topik teratas
 
 def build_training_data(user_id):
     history_df = load_history_from_github()
@@ -642,26 +643,29 @@ def main():
     st.markdown("---")
 
     st.header("🔥 Rekomendasi Berita Hari Ini")
-    most_frequent_topics = get_most_frequent_topics(USER_ID, st.session_state.history, days=3)
+    # PERBAIKAN: Mengambil beberapa topik teratas untuk rekomendasi
+    most_frequent_topics = get_most_frequent_topics(USER_ID, st.session_state.history, days=3, num_topics=3)
+    
     if most_frequent_topics:
-        q, count = most_frequent_topics[0]
-        with st.spinner('Mencari berita...'):
-            df_news = scrape_all_sources(q)
-        if df_news.empty:
-            st.info("❗ Tidak ditemukan berita.")
-        else:
-            results = recommend(df_news, q, clf, n_per_source=1, min_score=0.4)
-            if results.empty:
-                st.info("❗ Tidak ada hasil relevan.")
+        for q, count in most_frequent_topics:
+            st.subheader(f"Rekomendasi Berita untuk topik: '{q}'")
+            with st.spinner(f'Mencari berita terbaru tentang {q}...'):
+                df_news = scrape_all_sources(q)
+            if df_news.empty:
+                st.info("❗ Tidak ditemukan berita relevan.")
             else:
-                for i, row in results.iterrows():
-                    source_name = get_source_from_url(row['url'])
-                    st.markdown(f"**[{source_name}]** {row['title']}")
-                    st.markdown(row['url'])
-                    st.write(f"Waktu: *{row['publishedAt']}*")
-                    skor_key = 'final_score' if 'final_score' in row else 'similarity'
-                    st.write(f"Skor: `{row[skor_key]:.2f}`")
-                    st.markdown("---")
+                results = recommend(df_news, q, clf, n_per_source=1, min_score=0.4)
+                if results.empty:
+                    st.info("❗ Tidak ada hasil relevan.")
+                else:
+                    for i, row in results.iterrows():
+                        source_name = get_source_from_url(row['url'])
+                        st.markdown(f"**[{source_name}]** {row['title']}")
+                        st.markdown(row['url'])
+                        st.write(f"Waktu: *{row['publishedAt']}*")
+                        skor_key = 'final_score' if 'final_score' in row else 'similarity'
+                        st.write(f"Skor: `{row[skor_key]:.2f}`")
+                        st.markdown("---")
     else:
         st.info("🔥 Tidak ada topik yang sering dicari dalam 3 hari terakhir.")
 
