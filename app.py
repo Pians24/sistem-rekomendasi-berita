@@ -18,6 +18,7 @@ from sentence_transformers import SentenceTransformer
 from collections import Counter
 from github import Github
 import base64
+import streamlit.components.v1 as components
 
 # --- KONFIGURASI HALAMAN STREAMLIT ---
 st.set_page_config(page_title="Sistem Rekomendasi Berita", layout="wide")
@@ -371,7 +372,7 @@ def save_interaction_to_github(user_id, query, all_articles, clicked_urls):
             "title": str(row.get('title', '')),
             "url": str(row.get('url', '')),
             "content": str(row.get('content', '')),
-            "source": str(row.get('source', '')), # BARIS INI DITAMBAHKAN
+            "source": str(row.get('source', '')),
             "click_time": now,
             "label": 1 if row.get('url', '') in clicked_urls else 0
         }
@@ -442,7 +443,7 @@ def get_most_frequent_topics(user_id, df, days=3):
     
     now = datetime.now(jakarta_tz)
     cutoff_time = now - timedelta(days=days)
-    recent_df = df_user[df_user["timestamp"] >= cutoff_time]
+    recent_df = df_user[df["timestamp"] >= cutoff_time]
     if recent_df.empty:
         return []
 
@@ -530,6 +531,13 @@ def recommend(df, query, clf, n_per_source=3, min_score=0.5):
         top_n_per_source = df.groupby("source", group_keys=False).apply(top_n_sim)
         return top_n_per_source.sort_values(by=['publishedAt_dt', 'similarity'], ascending=[False, False]).reset_index(drop=True)
 
+# Fungsi untuk menangani interaksi dari JavaScript
+def handle_js_click(url):
+    if url not in st.session_state.clicked_urls_in_session:
+        st.session_state.clicked_urls_in_session.append(url)
+        st.toast("Interaksi Anda telah dicatat!")
+        st.experimental_rerun()
+
 def main():
     # Inisialisasi session_state dengan default yang aman
     if 'history' not in st.session_state:
@@ -585,24 +593,20 @@ def main():
                     df_filtered['publishedAt_dt'] = pd.to_datetime(df_filtered['click_time'], format="%A, %d %B %Y %H:%M", errors='coerce')
                     df_filtered = df_filtered.dropna(subset=['publishedAt_dt'])
                     
-                    # Logika untuk menampilkan skor relevansi dari riwayat
                     df_filtered['processed'] = df_filtered.apply(lambda row: preprocess_text(row['title'] + ' ' + str(row.get('content', ''))), axis=1)
                     
-                    # BARIS BARU: Hitung skor relevansi
                     q_vec = model_sbert.encode([preprocess_text(q)])
                     df_filtered['similarity'] = df_filtered['processed'].apply(lambda x: cosine_similarity([model_sbert.encode(x)], q_vec)[0][0])
                     
                     if clf:
                         df_filtered['final_score'] = clf.predict_proba(model_sbert.encode(df_filtered['processed'].tolist()))[:, 1]
                         
-                        # BARIS BARU: Ambil 3 artikel paling relevan per sumber
                         def top_n_history(x):
                             return x.sort_values(by=['publishedAt_dt', 'final_score'], ascending=[False, False]).head(3)
                         articles_to_show = df_filtered.groupby("source", group_keys=False).apply(top_n_history)
                         articles_to_show = articles_to_show.sort_values(by=['publishedAt_dt', 'final_score'], ascending=[False, False]).reset_index(drop=True)
                         skor_key = 'final_score'
                     else:
-                        # BARIS BARU: Ambil 3 artikel paling relevan per sumber (tanpa model)
                         def top_n_history(x):
                             return x.sort_values(by=['publishedAt_dt', 'similarity'], ascending=[False, False]).head(3)
                         articles_to_show = df_filtered.groupby("source", group_keys=False).apply(top_n_history)
@@ -610,8 +614,8 @@ def main():
                         skor_key = 'similarity'
 
                     if articles_to_show.empty:
-                         st.info("❗ Tidak ada hasil relevan yang ditemukan dalam riwayat untuk topik ini.")
-                         continue
+                            st.info("❗ Tidak ada hasil relevan yang ditemukan dalam riwayat untuk topik ini.")
+                            continue
                     
                     for i, row in articles_to_show.iterrows():
                         source_name = get_source_from_url(row['url'])
@@ -689,26 +693,72 @@ def main():
             for i, row in st.session_state.current_recommended_results.iterrows():
                 source_name = get_source_from_url(row['url'])
                 
-                if 'url' in row and row['url']:
-                    st.markdown(f"**[{source_name}]** {row['title']}")
-                    st.markdown(row['url'])
-                else:
-                    st.markdown(f"**[{source_name}]** {row['title']}")
-                    st.info("Tautan tidak tersedia.")
+                # Menggunakan st.markdown dengan unsafe_allow_html=True
+                # untuk membuat tombol HTML yang berinteraksi dengan Streamlit melalui JavaScript
+                button_html = f"""
+                <style>
+                    .styled-button {{
+                        background-color: #007bff;
+                        color: white;
+                        padding: 10px 20px;
+                        text-align: center;
+                        text-decoration: none;
+                        display: inline-block;
+                        font-size: 16px;
+                        margin: 4px 2px;
+                        cursor: pointer;
+                        border-radius: 8px;
+                        border: none;
+                    }}
+                </style>
+                <button 
+                    class="styled-button" 
+                    onclick="window.parent.postMessage({{
+                        streamlit: true,
+                        event: 'st_event',
+                        data: {{ url: '{row['url']}' }}
+                    }}, '*');
+                    window.open('{row['url']}', '_blank');"
+                >
+                    Buka Artikel & Catat Interaksi
+                </button>
+                """
 
+                st.markdown(f"**[{source_name}]** {row['title']}")
+                st.markdown(f"[{row['url']}]({row['url']})")
                 st.write(f"Waktu: *{row['publishedAt']}*")
                 skor_key = 'final_score' if 'final_score' in row else 'similarity'
                 st.write(f"Skor: `{row[skor_key]:.2f}`")
-                
-                key_link = f"link_{i}_{row.get('url', 'no_url')}_{st.session_state.current_query}"
-                if st.button(f"Catat Interaksi", key=key_link):
-                    st.session_state.clicked_urls_in_session.append(row['url'])
-                    st.toast("Interaksi Anda telah dicatat untuk sesi ini.")
-                
+
+                # Sematkan tombol kustom
+                st.markdown(button_html, unsafe_allow_html=True)
+
                 st.markdown("---")
         
         if st.session_state.current_query:
             st.info(f"Anda telah mencatat {len(st.session_state.clicked_urls_in_session)} artikel. Data akan disimpan saat Anda memulai pencarian baru.")
+
+# Blok kode untuk menerima pesan dari JavaScript
+if 'url_from_js' not in st.session_state:
+    st.session_state.url_from_js = None
+
+def on_message(message):
+    if 'url' in message:
+        handle_js_click(message['url'])
+
+components.html("""
+<script>
+    window.addEventListener('message', event => {
+        if (event.data && event.data.streamlit && event.data.event === 'st_event') {
+            window.parent.postMessage(event.data, '*');
+        }
+    });
+</script>
+""", height=0, width=0)
+
+if st.session_state.url_from_js:
+    handle_js_click(st.session_state.url_from_js)
+    st.session_state.url_from_js = None
 
 if __name__ == "__main__":
     main()
