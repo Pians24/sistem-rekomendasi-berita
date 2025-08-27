@@ -536,7 +536,7 @@ def recommend(df, query, clf, n_per_source=3, min_score=0.4):
 def handle_js_click(url):
     if url not in st.session_state.clicked_urls_in_session:
         st.session_state.clicked_urls_in_session.append(url)
-        st.experimental_rerun()
+        st.rerun()
 
 def main():
     if 'history' not in st.session_state:
@@ -560,7 +560,7 @@ def main():
         st.cache_resource.clear()
         st.success("Cache berhasil dibersihkan! Aplikasi akan dimuat ulang.")
         time.sleep(1)
-        st.experimental_rerun()
+        st.rerun()
 
     if st.session_state.history.empty:
         st.session_state.history = load_history_from_github()
@@ -679,7 +679,7 @@ def main():
             st.session_state.show_results = True
             st.session_state.current_query = search_query
             st.session_state.clicked_urls_in_session = []
-            st.experimental_rerun()
+            st.rerun()
         else:
             st.warning("Mohon masukkan topik pencarian.")
 
