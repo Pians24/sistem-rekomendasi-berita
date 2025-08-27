@@ -559,7 +559,7 @@ def recommend(df, query, clf, n_per_source=3, min_score=0.4):
 
         def top_n(x):
             return x.sort_values(by=['publishedAt_dt', 'final_score'], ascending=[False, False]).head(n_per_source)
-        top_n_per_source = df.groupby("source", group_keys=False).apply(top_n)
+        top_n_per_source = df.groupby("source", group_keys=False).apply(top_n, include_groups=False)
         return top_n_per_source.sort_values(by=['publishedAt_dt', 'final_score'], ascending=[False, False]).reset_index(drop=True)
     else:
         q_vec = model_sbert.encode([preprocess_text(query)])
@@ -570,7 +570,7 @@ def recommend(df, query, clf, n_per_source=3, min_score=0.4):
 
         def top_n_sim(x):
             return x.sort_values(by=['publishedAt_dt', 'similarity'], ascending=[False, False]).head(n_per_source)
-        top_n_per_source = df.groupby("source", group_keys=False).apply(top_n_sim)
+        top_n_per_source = df.groupby("source", group_keys=False).apply(top_n_sim, include_groups=False)
         return top_n_per_source.sort_values(by=['publishedAt_dt', 'similarity'], ascending=[False, False]).reset_index(drop=True)
 
 def handle_js_click(url):
@@ -766,7 +766,7 @@ def main():
                 st.write(f"Waktu: *{row['publishedAt']}*")
                 skor_key = 'final_score' if 'final_score' in row else 'similarity'
                 st.write(f"Skor: `{row[skor_key]:.2f}`")
-                
+
                 st.markdown(button_html, unsafe_allow_html=True)
 
                 st.markdown("---")
