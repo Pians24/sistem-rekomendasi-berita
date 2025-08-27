@@ -23,7 +23,23 @@ import streamlit.components.v1 as components
 # --- KONFIGURASI HALAMAN STREAMLIT ---
 st.set_page_config(page_title="Sistem Rekomendasi Berita", layout="wide")
 
-# --- Konfigurasi dan Inisialisasi ---
+# --- Inisialisasi Session State di awal skrip ---
+if 'history' not in st.session_state:
+    st.session_state.history = pd.DataFrame()
+if 'current_search_results' not in st.session_state:
+    st.session_state.current_search_results = pd.DataFrame()
+if 'show_results' not in st.session_state:
+    st.session_state.show_results = False
+if 'current_query' not in st.session_state:
+    st.session_state.current_query = ""
+if 'current_recommended_results' not in st.session_state:
+    st.session_state.current_recommended_results = pd.DataFrame()
+if 'clicked_urls_in_session' not in st.session_state:
+    st.session_state.clicked_urls_in_session = []
+if 'url_from_js' not in st.session_state:
+    st.session_state.url_from_js = None
+
+# --- Konfigurasi dan Inisialisasi Lainnya ---
 USER_ID = "user_01"
 HEADERS = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:128.0) Gecko/20100101 Firefox/128.0"}
 
@@ -579,19 +595,6 @@ def handle_js_click(url):
         st.rerun()
 
 def main():
-    if 'history' not in st.session_state:
-        st.session_state.history = pd.DataFrame()
-    if 'current_search_results' not in st.session_state:
-        st.session_state.current_search_results = pd.DataFrame()
-    if 'show_results' not in st.session_state:
-        st.session_state.show_results = False
-    if 'current_query' not in st.session_state:
-        st.session_state.current_query = ""
-    if 'current_recommended_results' not in st.session_state:
-        st.session_state.current_recommended_results = pd.DataFrame()
-    if 'clicked_urls_in_session' not in st.session_state:
-        st.session_state.clicked_urls_in_session = []
-
     st.title("📰 Sistem Rekomendasi Berita")
     st.markdown("Aplikasi ini merekomendasikan berita dari Detik, CNN, dan Kompas berdasarkan riwayat pencarian Anda.")
 
@@ -774,9 +777,10 @@ def main():
         if st.session_state.current_query:
             st.info(f"Anda telah mencatat {len(st.session_state.clicked_urls_in_session)} artikel. Data akan disimpan saat Anda memulai pencarian baru.")
 
+# Blok kode untuk menerima pesan dari JavaScript
 def on_message(message):
     if 'url' in message:
-        handle_js_click(message['url'])
+        st.session_state.url_from_js = message['url']
 
 components.html("""
 <script>
