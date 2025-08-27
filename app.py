@@ -24,7 +24,6 @@ import streamlit.components.v1 as components
 st.set_page_config(page_title="Sistem Rekomendasi Berita", layout="wide")
 
 # --- Inisialisasi Session State di awal skrip ---
-# Ini adalah langkah penting untuk mencegah error seperti KeyError atau AttributeError.
 if 'history' not in st.session_state:
     st.session_state.history = pd.DataFrame()
 if 'current_search_results' not in st.session_state:
