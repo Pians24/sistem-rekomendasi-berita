@@ -728,7 +728,7 @@ def main():
                 st.write(f"Waktu: *{row['publishedAt']}*")
                 skor_key = 'final_score' if 'final_score' in row else 'similarity'
                 st.write(f"Skor: `{row[skor_key]:.2f}`")
-
+                
                 # Sematkan tombol kustom
                 st.markdown(button_html, unsafe_allow_html=True)
 
