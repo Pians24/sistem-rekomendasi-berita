@@ -443,7 +443,10 @@ def get_most_frequent_topics(user_id, df, days=3):
     
     now = datetime.now(jakarta_tz)
     cutoff_time = now - timedelta(days=days)
-    recent_df = df_user[df["timestamp"] >= cutoff_time]
+    
+    # Perbaikan di sini, gunakan df_user bukan df
+    recent_df = df_user[df_user["timestamp"] >= cutoff_time]
+    
     if recent_df.empty:
         return []
 
