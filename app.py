@@ -76,31 +76,22 @@ def preprocess_text(text):
 def extract_datetime_from_title(title, url=None):
     zona = pytz.timezone("Asia/Jakarta")
     now = datetime.now(zona)
-    
-    # Mapping nama bulan dalam bahasa Indonesia dan Inggris
-    bulan_map_id = {
-        "Jan": "01", "Feb": "02", "Mar": "03", "Apr": "04", "Mei": "05", "Jun": "06",
-        "Jul": "07", "Agu": "08", "Sep": "09", "Okt": "10", "Nov": "11", "Des": "12",
-        "Januari": "01", "Februari": "02", "Maret": "03", "April": "04", "Mei": "05", "Juni": "06",
-        "Juli": "07", "Agustus": "08", "September": "09", "Oktober": "10", "November": "11", "Desember": "12"
-    }
-    bulan_map_en = {
-        "Jan": "01", "Feb": "02", "Mar": "03", "Apr": "04", "May": "05", "Jun": "06",
-        "Jul": "07", "Aug": "08", "Sep": "09", "Oct": "10", "Nov": "11", "Dec": "12"
-    }
 
     # Pola untuk Detik: "Rabu, 27 Agu 2025 18:47 WIB"
-    match_detik_date = re.search(r"(\w+, \d{1,2} \w+ \d{4} \d{2}:\d{2})", title)
+    bulan_map_detik = {
+        "Agu": "08", "Jan": "01", "Feb": "02", "Mar": "03", "Apr": "04", "Mei": "05",
+        "Jun": "06", "Jul": "07", "Sep": "09", "Okt": "10", "Nov": "11", "Des": "12"
+    }
+    match_detik_date = re.search(r"(\w+, \d{1,2}) (\w+) (\d{4}) (\d{2}:\d{2})", title)
     if match_detik_date:
-        date_time_str = match_detik_date.group(1)
-        # Mengganti nama bulan
-        for key, value in bulan_map_id.items():
-            date_time_str = date_time_str.replace(key, value)
-        try:
-            dt_obj = datetime.strptime(date_time_str, "%A, %d %m %Y %H:%M")
-            return zona.localize(dt_obj).strftime("%Y-%m-%d %H:%M")
-        except ValueError:
-            pass
+        day_str, day, month_str, year, time_str = match_detik_date.groups()
+        month_num = bulan_map_detik.get(month_str, "00")
+        if month_num != "00":
+            try:
+                dt_obj = datetime.strptime(f"{year}-{month_num}-{day} {time_str}", "%Y-%m-%d %H:%M")
+                return zona.localize(dt_obj).strftime("%Y-%m-%d %H:%M")
+            except ValueError:
+                pass
 
     # Pola untuk CNN: "Rabu, 27/08/2025 18:47 WIB"
     match_cnn_date = re.search(r"(\w+), (\d{2})/(\d{2})/(\d{4}) (\d{2}:\d{2})", title)
@@ -112,7 +103,27 @@ def extract_datetime_from_title(title, url=None):
         except ValueError:
             pass
 
-    # Pola untuk "X waktu yang lalu"
+    # Pola untuk Kompas di URL: /2025/08/25/11480341/
+    if url and "kompas.com" in url:
+        url_match = re.search(r"/(\d{4})/(\d{2})/(\d{2})/(\d{2})(\d{2})", url)
+        if url_match:
+            y, m, d, h, mi = url_match.groups()
+            try:
+                dt = datetime.strptime(f"{y}-{m}-{d} {h}:{mi}", "%Y-%m-%d %H:%M")
+                return zona.localize(dt).strftime("%Y-%m-%d %H:%M")
+            except:
+                pass
+
+    # Pola untuk format lain (sebagai fallback)
+    match_absolute = re.search(r"(\d{4}-\d{2}-\d{2}\s\d{2}:\d{2})", title)
+    if match_absolute:
+        try:
+            dt = datetime.strptime(match_absolute.group(1), "%Y-%m-%d %H:%M")
+            return zona.localize(dt).strftime("%Y-%m-%d %H:%M")
+        except:
+            pass
+            
+    # Pola untuk "X waktu yang lalu" (sebagai fallback terakhir)
     match_relative = re.search(r"(\d+)\s+(menit|jam|hari|minggu)\s+yang lalu", title, re.IGNORECASE)
     if match_relative:
         jumlah, satuan = match_relative.groups()
@@ -127,58 +138,6 @@ def extract_datetime_from_title(title, url=None):
             dt = now - timedelta(weeks=jumlah)
         return dt.strftime("%Y-%m-%d %H:%M")
 
-    # Pola untuk format tanggal Kompas "Kompas.com - 25/08/2025, 11:48"
-    pattern_kompas_title = r"Kompas\.com\s*-\s*(\d{2})/(\d{2})/(\d{4}),\s*(\d{2}:\d{2})"
-    match = re.search(pattern_kompas_title, title)
-    if match:
-        day, month, year, time_str = match.groups()
-        try:
-            dt = datetime.strptime(f"{year}-{month}-{day} {time_str}", "%Y-%m-%d %H:%M")
-            return zona.localize(dt).strftime("%Y-%m-%d %H:%M")
-        except:
-            pass
-            
-    # Pola untuk Detik dan CNN: dari URL yang mengandung tanggal dan waktu
-    if url:
-        # Pola untuk Detik: .../20250820-250820126/...
-        detik_url_match = re.search(r"/(\d{4})(\d{2})(\d{2})-.*?(\d{2})(\d{2})(\d{2})/", url)
-        if detik_url_match:
-            y, m, d, h, minute, s = detik_url_match.groups()
-            try:
-                dt = datetime(int(y), int(m), int(d), int(h), int(minute), int(s))
-                return zona.localize(dt).strftime("%Y-%m-%d %H:%M")
-            except:
-                pass
-        
-        # Pola untuk CNN: .../20250820212238/...
-        cnn_url_match = re.search(r"/(\d{4})(\d{2})(\d{2})(\d{2})(\d{2})(\d{2})/", url)
-        if cnn_url_match:
-            y, m, d, h, minute, s = cnn_url_match.groups()
-            try:
-                dt = datetime(int(y), int(m), int(d), int(h), int(minute), int(s))
-                return zona.localize(dt).strftime("%Y-%m-%d %H:%M")
-            except:
-                pass
-                
-        # Pola untuk format tanggal di URL, sebagai fallback
-        url_match = re.search(r"/(\d{4})/(\d{2})/(\d{2})/", url)
-        if url_match:
-            y, m, d = url_match.groups()
-            try:
-                dt = datetime(int(y), int(m), int(d))
-                return zona.localize(dt).strftime("%Y-%m-%d %H:%M")
-            except:
-                pass
-
-    # Pola untuk format lain (contoh: Detik.com atau CNN)
-    match_absolute = re.search(r"(\d{4}-\d{2}-\d{2}\s\d{2}:\d{2})", title)
-    if match_absolute:
-        try:
-            dt = datetime.strptime(match_absolute.group(1), "%Y-%m-%d %H:%M")
-            return zona.localize(dt).strftime("%Y-%m-%d %H:%M")
-        except:
-            pass
-            
     return ""
 
 @st.cache_data
@@ -199,79 +158,64 @@ def scrape_detik(query, max_articles=15):
         "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/109.0.0.0 Safari/537.36",
         "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/108.0.0.0 Safari/537.36"
     ]
-    for _ in range(2):
-        try:
-            headers = {"User-Agent": random.choice(USER_AGENTS)}
-            res = requests.get(url, headers=headers, timeout=10)
-            if res.status_code == 200:
-                soup = BeautifulSoup(res.content, "html.parser")
-                articles_raw = soup.select("article.list-content__item")
-                if not articles_raw:
-                    time.sleep(random.uniform(1, 3))
-                    continue
-                for article in articles_raw:
-                    try:
-                        title_tag = article.find('h3', class_='media__title')
-                        link = title_tag.a['href'] if title_tag and title_tag.a else ''
-                        description_tag = article.find('div', class_='media__desc')
+    headers_main = {"User-Agent": random.choice(USER_AGENTS)}
 
-                        if not title_tag or not link:
-                            continue
+    try:
+        res = requests.get(url, headers=headers_main, timeout=10)
+        if res.status_code == 200:
+            soup = BeautifulSoup(res.content, "html.parser")
+            articles_raw = soup.select("article.list-content__item")
+            if not articles_raw:
+                st.warning("Scraper Detik tidak menemukan artikel di halaman pencarian.")
+                return pd.DataFrame()
+                
+            for article in articles_raw:
+                try:
+                    title_tag = article.find('h3', class_='media__title')
+                    link = title_tag.a['href'] if title_tag and title_tag.a else ''
+                    description_tag = article.find('div', class_='media__desc')
 
-                        title = title_tag.get_text(strip=True)
-                        description = description_tag.get_text(strip=True) if description_tag else ""
-                        published_at = ''
-
-                        if is_relevant(title, query, description):
-                            # Mengunjungi halaman artikel untuk mengambil tanggal yang akurat
-                            time.sleep(random.uniform(1, 2))
-                            art_res = requests.get(link, headers=headers, timeout=10)
-                            if art_res.status_code == 200:
-                                art_soup = BeautifulSoup(art_res.content, 'html.parser')
-                                date_tag = art_soup.select_one("div.detail__date")
-                                if date_tag:
-                                    date_text = date_tag.get_text(strip=True)
-                                    # Contoh: "Rabu, 27 Agu 2025 18:47 WIB"
-                                    # Perbaiki parsing untuk format Detik
-                                    match_detik_date = re.search(r"(\w+, \d{1,2} \w+ \d{4} \d{2}:\d{2})", date_text)
-                                    if match_detik_date:
-                                        date_time_str = match_detik_date.group(1)
-                                        # Mapping nama bulan
-                                        bulan_map = {
-                                            "Jan": "01", "Feb": "02", "Mar": "03", "Apr": "04", "Mei": "05", "Jun": "06",
-                                            "Jul": "07", "Agu": "08", "Sep": "09", "Okt": "10", "Nov": "11", "Des": "12"
-                                        }
-                                        for key, value in bulan_map.items():
-                                            date_time_str = date_time_str.replace(key, value)
-                                        try:
-                                            dt_obj = datetime.strptime(date_time_str, "%A, %d %m %Y %H:%M")
-                                            published_at = dt_obj.strftime("%Y-%m-%d %H:%M")
-                                        except ValueError:
-                                            published_at = extract_datetime_from_title(date_text, link)
-                                    else:
-                                        published_at = extract_datetime_from_title(date_text, link)
-
-                            if not published_at:
-                                jakarta_tz = pytz.timezone("Asia/Jakarta")
-                                published_at = datetime.now(jakarta_tz).strftime("%Y-%m-%d %H:%M")
-
-                            data.append({
-                                "source": get_source_from_url(link),
-                                "title": title,
-                                "description": description,
-                                "content": f"{title} {description}",
-                                "url": link,
-                                "publishedAt": published_at
-                            })
-                    except Exception as e:
+                    if not title_tag or not link:
                         continue
-                    if len(data) >= max_articles:
-                        break
-                return pd.DataFrame(data)
-            else:
-                time.sleep(random.uniform(1, 3))
-        except (requests.exceptions.RequestException, Exception) as e:
-            time.sleep(random.uniform(1, 3))
+
+                    title = title_tag.get_text(strip=True)
+                    description = description_tag.get_text(strip=True) if description_tag else ""
+                    published_at = ''
+
+                    if is_relevant(title, query, description):
+                        # Mengunjungi halaman artikel untuk mengambil tanggal yang akurat
+                        time.sleep(random.uniform(1, 2))
+                        headers_article = {"User-Agent": random.choice(USER_AGENTS)}
+                        art_res = requests.get(link, headers=headers_article, timeout=10)
+                        if art_res.status_code == 200:
+                            art_soup = BeautifulSoup(art_res.content, 'html.parser')
+                            date_tag = art_soup.select_one("div.detail__date")
+                            if date_tag:
+                                date_text = date_tag.get_text(strip=True)
+                                published_at = extract_datetime_from_title(date_text, link)
+
+                        if not published_at:
+                            jakarta_tz = pytz.timezone("Asia/Jakarta")
+                            published_at = datetime.now(jakarta_tz).strftime("%Y-%m-%d %H:%M")
+
+                        data.append({
+                            "source": get_source_from_url(link),
+                            "title": title,
+                            "description": description,
+                            "content": f"{title} {description}",
+                            "url": link,
+                            "publishedAt": published_at
+                        })
+                except Exception as e:
+                    continue
+                if len(data) >= max_articles:
+                    break
+            return pd.DataFrame(data)
+        else:
+            st.warning(f"Gagal scraping Detik: Status code {res.status_code}. Mengembalikan DataFrame kosong.")
+    except (requests.exceptions.RequestException, Exception) as e:
+        st.warning(f"Gagal scraping Detik: {e}. Mengembalikan DataFrame kosong.")
+        time.sleep(random.uniform(1, 3))
     return pd.DataFrame()
 
 @st.cache_data(show_spinner="Mencari berita di CNN...")
@@ -279,130 +223,134 @@ def scrape_cnn_fixed(query, max_results=10):
     url = f"https://www.cnnindonesia.com/search?query={query.replace(' ', '+')}"
     results = []
     
-    try:
-        headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/108.0.0.0 Safari/537.36"}
-        res = requests.get(url, headers=headers, timeout=10)
-        
-        if res.status_code == 200:
-            soup = BeautifulSoup(res.content, 'html.parser')
-            articles = soup.find_all('article', class_='box--card')
-            
-            for article in articles:
-                link_tag = article.find('a', class_='box--card__link')
-                if not link_tag:
-                    continue
-                
-                link = link_tag['href']
-                title = link_tag.find('span', class_='box--card__title').get_text(strip=True) if link_tag.find('span', class_='box--card__title') else ""
-                summary = article.find('span', class_='box--card__desc').get_text(strip=True) if article.find('span', class_='box--card__desc') else ""
-
-                if is_relevant(title, query, summary):
-                    # Mengunjungi halaman artikel untuk mengambil tanggal yang akurat
-                    time.sleep(random.uniform(1, 2))
-                    art_res = requests.get(link, headers=headers, timeout=10)
-                    published_at = ''
-                    if art_res.status_code == 200:
-                        art_soup = BeautifulSoup(art_res.content, 'html.parser')
-                        date_tag = art_soup.select_one("div.detail__date")
-                        if date_tag:
-                            date_text = date_tag.get_text(strip=True)
-                            published_at = extract_datetime_from_title(date_text, link)
-
-                    if not published_at:
-                        jakarta_tz = pytz.timezone("Asia/Jakarta")
-                        published_at = datetime.now(jakarta_tz).strftime("%Y-%m-%d %H:%M")
-                    
-                    results.append({
-                        "source": get_source_from_url(link),
-                        "title": title,
-                        "description": summary,
-                        "content": f"{title} {summary}",
-                        "url": link,
-                        "publishedAt": published_at
-                    })
-                if len(results) >= max_results:
-                    return pd.DataFrame(results)
-        else:
-            st.warning(f"Gagal scraping CNN: Status code {res.status_code}. Mengembalikan DataFrame kosong.")
-    except Exception as e:
-        st.warning(f"Gagal scraping CNN: {e}. Mengembalikan DataFrame kosong.")
-        time.sleep(random.uniform(1, 3))
-
-    return pd.DataFrame(results)
-
-@st.cache_data(show_spinner="Mencari berita di Kompas...")
-def scrape_kompas_fixed(query, max_articles=10):
-    search_url = f"https://search.kompas.com/search?q={query.replace(' ', '+')}"
-    data = []
-
     USER_AGENTS = [
         "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/108.0.0.0 Safari/537.36",
         "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/109.0.0.0 Safari/537.36",
         "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/108.0.0.0 Safari/537.36"
     ]
-    
-    for _ in range(2):
-        try:
-            headers_search = {"User-Agent": random.choice(USER_AGENTS)}
-            res = requests.get(search_url, headers=headers_search, timeout=10)
+    headers_main = {"User-Agent": random.choice(USER_AGENTS)}
+
+    try:
+        res = requests.get(url, headers=headers_main, timeout=10)
+        if res.status_code == 200:
+            soup = BeautifulSoup(res.content, 'html.parser')
+            articles_raw = soup.find_all('article', class_='box--card')
             
-            if res.status_code == 200:
-                soup = BeautifulSoup(res.text, "html.parser")
-                articles = soup.select("div.articleItem")[:max_articles]
-                
-                if not articles:
-                    st.warning("Scraper Kompas tidak menemukan artikel di halaman pencarian.")
-                    return pd.DataFrame()
-
-                for item in articles:
-                    try:
-                        a_tag = item.select_one("a.article-link")
-                        title_tag = item.select_one("h2.articleTitle")
-
-                        if not a_tag or not title_tag:
-                            continue
-
-                        url = a_tag["href"]
-                        title = title_tag.get_text(strip=True)
-
-                        time.sleep(random.uniform(2, 5))
-                        
-                        headers_article = {"User-Agent": random.choice(USER_AGENTS)}
-                        art_res = requests.get(url, headers=headers_article, timeout=15)
-                        
-                        if art_res.status_code != 200:
-                            continue
-
-                        art_soup = BeautifulSoup(art_res.text, "html.parser")
-
-                        content_paras = art_soup.select("div.read__content > p")
-                        content = " ".join([p.get_text(strip=True) for p in content_paras])
-
-                        time_tag = art_soup.select_one("div.read__time")
-                        published = extract_datetime_from_title(time_tag.get_text(strip=True) if time_tag else "", url)
-
-                        if not published:
-                            jakarta_tz = pytz.timezone("Asia/Jakarta")
-                            published = datetime.now(jakarta_tz).strftime("%Y-%m-%d %H:%M")
-
-                        if is_relevant(title, query, content):
-                            data.append({
-                                "source": get_source_from_url(url),
-                                "title": title,
-                                "description": "",
-                                "content": content,
-                                "url": url,
-                                "publishedAt": published
-                            })
-                    except Exception:
+            for article in articles_raw:
+                try:
+                    link_tag = article.find('a', class_='box--card__link')
+                    if not link_tag:
                         continue
-                    if len(data) >= max_articles:
-                        break
-                return pd.DataFrame(data)
-            else:
-                time.sleep(random.uniform(1, 3))
-        except (requests.exceptions.RequestException, Exception):
-            time.sleep(random.uniform(1, 3))
+                    
+                    link = link_tag['href']
+                    title = link_tag.find('span', class_='box--card__title').get_text(strip=True) if link_tag.find('span', class_='box--card__title') else ""
+                    summary = article.find('span', class_='box--card__desc').get_text(strip=True) if article.find('span', class_='box--card__desc') else ""
+                    
+                    if is_relevant(title, query, summary):
+                        # Mengunjungi halaman artikel untuk mengambil tanggal yang akurat
+                        time.sleep(random.uniform(1, 2))
+                        headers_article = {"User-Agent": random.choice(USER_AGENTS)}
+                        art_res = requests.get(link, headers=headers_article, timeout=10)
+                        published_at = ''
+                        if art_res.status_code == 200:
+                            art_soup = BeautifulSoup(art_res.content, 'html.parser')
+                            date_tag = art_soup.select_one("div.detail__date")
+                            if date_tag:
+                                date_text = date_tag.get_text(strip=True)
+                                published_at = extract_datetime_from_title(date_text, link)
+
+                        if not published_at:
+                            jakarta_tz = pytz.timezone("Asia/Jakarta")
+                            published_at = datetime.now(jakarta_tz).strftime("%Y-%m-%d %H:%M")
+                        
+                        results.append({
+                            "source": get_source_from_url(link),
+                            "title": title,
+                            "description": summary,
+                            "content": f"{title} {summary}",
+                            "url": link,
+                            "publishedAt": published_at
+                        })
+                    if len(results) >= max_results:
+                        return pd.DataFrame(results)
+                except Exception as e:
+                    continue
+            return pd.DataFrame(results)
+        else:
+            st.warning(f"Gagal scraping CNN: Status code {res.status_code}. Mengembalikan DataFrame kosong.")
+    except (requests.exceptions.RequestException, Exception) as e:
+        st.warning(f"Gagal scraping CNN: {e}. Mengembalikan DataFrame kosong.")
+        time.sleep(random.uniform(1, 3))
+    return pd.DataFrame()
+
+@st.cache_data(show_spinner="Mencari berita di Kompas...")
+def scrape_kompas_fixed(query, max_articles=10):
+    search_url = f"https://search.kompas.com/search?q={query.replace(' ', '+')}"
+    data = []
+    USER_AGENTS = [
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/108.0.0.0 Safari/537.36",
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/109.0.0.0 Safari/537.36",
+        "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/108.0.0.0 Safari/537.36"
+    ]
+    headers_main = {"User-Agent": random.choice(USER_AGENTS)}
+
+    try:
+        res = requests.get(search_url, headers=headers_main, timeout=10)
+        if res.status_code == 200:
+            soup = BeautifulSoup(res.text, "html.parser")
+            articles_raw = soup.select("div.articleItem")[:max_articles]
+            
+            if not articles_raw:
+                st.warning("Scraper Kompas tidak menemukan artikel di halaman pencarian.")
+                return pd.DataFrame()
+
+            for item in articles_raw:
+                try:
+                    a_tag = item.select_one("a.article-link")
+                    title_tag = item.select_one("h2.articleTitle")
+
+                    if not a_tag or not title_tag:
+                        continue
+
+                    url = a_tag["href"]
+                    title = title_tag.get_text(strip=True)
+
+                    time.sleep(random.uniform(2, 5))
+                    headers_article = {"User-Agent": random.choice(USER_AGENTS)}
+                    art_res = requests.get(url, headers=headers_article, timeout=15)
+                    
+                    if art_res.status_code != 200:
+                        continue
+
+                    art_soup = BeautifulSoup(art_res.text, "html.parser")
+                    content_paras = art_soup.select("div.read__content > p")
+                    content = " ".join([p.get_text(strip=True) for p in content_paras])
+
+                    time_tag = art_soup.select_one("div.read__time")
+                    published = extract_datetime_from_title(time_tag.get_text(strip=True) if time_tag else "", url)
+
+                    if not published:
+                        jakarta_tz = pytz.timezone("Asia/Jakarta")
+                        published = datetime.now(jakarta_tz).strftime("%Y-%m-%d %H:%M")
+
+                    if is_relevant(title, query, content):
+                        data.append({
+                            "source": get_source_from_url(url),
+                            "title": title,
+                            "description": "",
+                            "content": content,
+                            "url": url,
+                            "publishedAt": published
+                        })
+                except Exception as e:
+                    continue
+                if len(data) >= max_articles:
+                    break
+            return pd.DataFrame(data)
+        else:
+            st.warning(f"Gagal scraping Kompas: Status code {res.status_code}.")
+    except (requests.exceptions.RequestException, Exception) as e:
+        st.warning(f"Gagal scraping Kompas: {e}.")
     return pd.DataFrame()
 
 @st.cache_data(show_spinner="Menggabungkan hasil...")
