@@ -537,7 +537,7 @@ def train_model(df_train):
     st.sidebar.write(f"- Akurasi: {accuracy_score(y_test, y_pred):.2f}")
     st.sidebar.write(f"- Presisi: {precision_score(y_test, y_pred):.2f}")
     st.sidebar.write(f"- Recall: {recall_score(y_test, y_pred):.2f}")
-    st.sidebar.write(f"- Skor F1: {f1_score(y_test, y_pred):.2f}")
+    st.sidebar.write(f"- Score F1: {f1_score(y_test, y_pred):.2f}")
     return clf
 
 def recommend(df, query, clf, n_per_source=3, min_score=0.55,
