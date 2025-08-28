@@ -146,14 +146,6 @@ def extract_datetime_from_title(title, url=None):
             
     return ""
 
-@st.cache_data
-def is_relevant(title, query, content="", threshold=0.5):
-    combined = f"{title} {content}"
-    combined_vecs = model_sbert.encode([combined])
-    query_vecs = model_sbert.encode([query])
-    sim = cosine_similarity(combined_vecs, query_vecs)[0][0]
-    return sim >= threshold
-
 # 4. Scraper per sumber (DIPERBAIKI)
 @st.cache_data(show_spinner="Mencari berita di Detik...")
 def scrape_detik(query, max_articles=15):
@@ -179,21 +171,47 @@ def scrape_detik(query, max_articles=15):
                         title_tag = article.find('h3', class_='media__title')
                         link = title_tag.a['href'] if title_tag and title_tag.a else ''
                         description_tag = article.find('div', class_='media__desc')
-                        date_tag = article.find('div', class_='media__date').find('span') if article.find('div', class_='media__date') else None
 
                         if not title_tag or not link:
                             continue
 
                         title = title_tag.get_text(strip=True)
                         description = description_tag.get_text(strip=True) if description_tag else ""
-                        published_at = date_tag.get('title', '') if date_tag else ''
-                        published_at = extract_datetime_from_title(published_at, link)
-
-                        if not published_at:
-                            jakarta_tz = pytz.timezone("Asia/Jakarta")
-                            published_at = datetime.now(jakarta_tz).strftime("%Y-%m-%d %H:%M")
+                        published_at = ''
 
                         if is_relevant(title, query, description):
+                            # Mengunjungi halaman artikel untuk mengambil tanggal yang akurat
+                            time.sleep(random.uniform(1, 2))
+                            art_res = requests.get(link, headers=headers, timeout=10)
+                            if art_res.status_code == 200:
+                                art_soup = BeautifulSoup(art_res.content, 'html.parser')
+                                date_tag = art_soup.select_one("div.detail__date")
+                                if date_tag:
+                                    date_text = date_tag.get_text(strip=True)
+                                    # Contoh: "Rabu, 27 Agu 2025 18:47 WIB"
+                                    # Perbaiki parsing untuk format Detik
+                                    match_detik_date = re.search(r"(\w+, \d{1,2} \w+ \d{4} \d{2}:\d{2})", date_text)
+                                    if match_detik_date:
+                                        date_time_str = match_detik_date.group(1)
+                                        # Mapping nama bulan
+                                        bulan_map = {
+                                            "Jan": "01", "Feb": "02", "Mar": "03", "Apr": "04", "Mei": "05", "Jun": "06",
+                                            "Jul": "07", "Agu": "08", "Sep": "09", "Okt": "10", "Nov": "11", "Des": "12"
+                                        }
+                                        for key, value in bulan_map.items():
+                                            date_time_str = date_time_str.replace(key, value)
+                                        try:
+                                            dt_obj = datetime.strptime(date_time_str, "%A, %d %m %Y %H:%M")
+                                            published_at = dt_obj.strftime("%Y-%m-%d %H:%M")
+                                        except ValueError:
+                                            published_at = extract_datetime_from_title(date_text, link)
+                                    else:
+                                        published_at = extract_datetime_from_title(date_text, link)
+
+                            if not published_at:
+                                jakarta_tz = pytz.timezone("Asia/Jakarta")
+                                published_at = datetime.now(jakarta_tz).strftime("%Y-%m-%d %H:%M")
+
                             data.append({
                                 "source": get_source_from_url(link),
                                 "title": title,
@@ -202,14 +220,14 @@ def scrape_detik(query, max_articles=15):
                                 "url": link,
                                 "publishedAt": published_at
                             })
-                    except Exception:
+                    except Exception as e:
                         continue
                     if len(data) >= max_articles:
                         break
                 return pd.DataFrame(data)
             else:
                 time.sleep(random.uniform(1, 3))
-        except (requests.exceptions.RequestException, Exception):
+        except (requests.exceptions.RequestException, Exception) as e:
             time.sleep(random.uniform(1, 3))
     return pd.DataFrame()
 
@@ -234,15 +252,23 @@ def scrape_cnn_fixed(query, max_results=10):
                 link = link_tag['href']
                 title = link_tag.find('span', class_='box--card__title').get_text(strip=True) if link_tag.find('span', class_='box--card__title') else ""
                 summary = article.find('span', class_='box--card__desc').get_text(strip=True) if article.find('span', class_='box--card__desc') else ""
-                published = article.find('span', class_='box--card__date').get_text(strip=True) if article.find('span', class_='box--card__date') else ""
-                
-                published_at = extract_datetime_from_title(published, link)
-
-                if not published_at:
-                    jakarta_tz = pytz.timezone("Asia/Jakarta")
-                    published_at = datetime.now(jakarta_tz).strftime("%Y-%m-%d %H:%M")
 
                 if is_relevant(title, query, summary):
+                    # Mengunjungi halaman artikel untuk mengambil tanggal yang akurat
+                    time.sleep(random.uniform(1, 2))
+                    art_res = requests.get(link, headers=headers, timeout=10)
+                    published_at = ''
+                    if art_res.status_code == 200:
+                        art_soup = BeautifulSoup(art_res.content, 'html.parser')
+                        date_tag = art_soup.select_one("div.detail__date")
+                        if date_tag:
+                            date_text = date_tag.get_text(strip=True)
+                            published_at = extract_datetime_from_title(date_text, link)
+
+                    if not published_at:
+                        jakarta_tz = pytz.timezone("Asia/Jakarta")
+                        published_at = datetime.now(jakarta_tz).strftime("%Y-%m-%d %H:%M")
+                    
                     results.append({
                         "source": get_source_from_url(link),
                         "title": title,
@@ -449,12 +475,12 @@ def get_recent_queries_by_days(user_id, df, days=3):
     if recent_df.empty:
         return {}
     
-    recent_df.loc[:, 'date'] = recent_df['timestamp'].dt.strftime('%d %B %Y')
+    recent_df.loc[:, 'date'] = recent_df['timestamp'].dt.strftime('%Y-%m-%d')
     grouped_queries = recent_df.groupby('date')['query'].unique().to_dict()
 
     sorted_dates = sorted(
         grouped_queries.keys(),
-        key=lambda d: datetime.strptime(d, '%d %B %Y'),
+        key=lambda d: datetime.strptime(d, '%Y-%m-%d'),
         reverse=True
     )
     ordered_grouped_queries = {date: grouped_queries[date] for date in sorted_dates}
