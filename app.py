@@ -76,7 +76,7 @@ def preprocess_text(text):
 def extract_datetime_from_title(title, url=None):
     zona = pytz.timezone("Asia/Jakarta")
     now = datetime.now(zona)
-    
+
     # Pola untuk Detik: "Rabu, 27 Agu 2025 18:47 WIB"
     bulan_map_detik = {
         "Agu": "08", "Jan": "01", "Feb": "02", "Mar": "03", "Apr": "04", "Mei": "05",
