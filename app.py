@@ -71,22 +71,30 @@ def preprocess_text(text):
     text = re.sub(r'\s+', ' ', text).strip()
     return text
 
-# 3. Ekstrak waktu (DIPERBAIKI DENGAN KODE DARI ANDA)
+# 3. Ekstrak waktu (DIPERBAIKI)
 @st.cache_data
-def extract_datetime_from_title(title):
-    bulan_mapping = {
-        "Jan": "01", "Feb": "02", "Mar": "03", "Apr": "04",
-        "Mei": "05", "Jun": "06", "Jul": "07", "Agu": "08", "Ags": "08",
-        "Agustus": "08", "Sep": "09", "September": "09",
-        "Okt": "10", "Oktober": "10", "Nov": "11", "November": "11",
-        "Des": "12", "Desember": "12", "Januari": "01", "Februari": "02",
-        "Maret": "03", "April": "04", "Juni": "06", "Juli": "07"
-    }
+def extract_datetime_from_title(title, url=None):
     zona = pytz.timezone("Asia/Jakarta")
+    now = datetime.now(zona)
 
-    # Format Kompas: Kompas.com - 09/07/2025, 20:36 WIB
-    pattern_kompas = r"Kompas\.com\s*-\s*(\d{2})/(\d{2})/(\d{4}),\s*(\d{2}:\d{2})"
-    match = re.search(pattern_kompas, title)
+    # Pola untuk "X waktu yang lalu"
+    match_relative = re.search(r"(\d+)\s+(menit|jam|hari|minggu)\s+yang lalu", title, re.IGNORECASE)
+    if match_relative:
+        jumlah, satuan = match_relative.groups()
+        jumlah = int(jumlah)
+        if "menit" in satuan:
+            dt = now - timedelta(minutes=jumlah)
+        elif "jam" in satuan:
+            dt = now - timedelta(hours=jumlah)
+        elif "hari" in satuan:
+            dt = now - timedelta(days=jumlah)
+        elif "minggu" in satuan:
+            dt = now - timedelta(weeks=jumlah)
+        return dt.strftime("%Y-%m-%d %H:%M")
+
+    # Pola untuk format tanggal Kompas "Kompas.com - 25/08/2025, 11:48"
+    pattern_kompas_title = r"Kompas\.com\s*-\s*(\d{2})/(\d{2})/(\d{4}),\s*(\d{2}:\d{2})"
+    match = re.search(pattern_kompas_title, title)
     if match:
         day, month, year, time_str = match.groups()
         try:
@@ -95,56 +103,28 @@ def extract_datetime_from_title(title):
         except:
             pass
 
-    # Format umum: Jumat, 14 Jul 2025 17:25 WIB atau 14 Jul 2025 17:25
-    pattern1 = r"(?:\w+, )?(\d{1,2}) (\w+) (\d{4}) (\d{2}:\d{2})"
-    match = re.search(pattern1, title)
-    if match:
-        day, month_str, year, time_str = match.groups()
-        month = bulan_mapping.get(month_str)
-        if month:
+    # Pola untuk format tanggal di URL, sebagai fallback
+    if url:
+        url_match = re.search(r"/(\d{4})/(\d{2})/(\d{2})/", url)
+        if url_match:
+            y, m, d = url_match.groups()
             try:
-                dt = datetime.strptime(f"{year}-{month}-{int(day):02d} {time_str}", "%Y-%m-%d %H:%M")
+                dt = datetime(int(y), int(m), int(d))
                 return zona.localize(dt).strftime("%Y-%m-%d %H:%M")
             except:
                 pass
 
-    # Format hanya tanggal: 14 Juli 2025
-    pattern2 = r"(\d{1,2}) (\w+) (\d{4})"
-    match = re.search(pattern2, title)
-    if match:
-        day, month_str, year = match.groups()
-        month = bulan_mapping.get(month_str)
-        if month:
-            try:
-                dt = datetime.strptime(f"{year}-{month}-{int(day):02d}", "%Y-%m-%d")
-                return zona.localize(dt).strftime("%Y-%m-%d %H:%M")
-            except:
-                pass
-
-    # Format: 14/07/2025, 14:30 WIB
-    pattern3 = r"(\d{2})/(\d{2})/(\d{4}), (\d{2}:\d{2})"
-    match = re.search(pattern3, title)
-    if match:
-        day, month, year, time_str = match.groups()
+    # Pola untuk format lain (contoh: Detik.com atau CNN)
+    match_absolute = re.search(r"(\d{4}-\d{2}-\d{2}\s\d{2}:\d{2})", title)
+    if match_absolute:
         try:
-            dt = datetime.strptime(f"{year}-{month}-{day} {time_str}", "%Y-%m-%d %H:%M")
+            dt = datetime.strptime(match_absolute.group(1), "%Y-%m-%d %H:%M")
             return zona.localize(dt).strftime("%Y-%m-%d %H:%M")
         except:
             pass
-
-    # Format waktu relatif: x jam yang lalu / x menit yang lalu
-    pattern4 = r"(\d+)\s+(menit|jam)\s+yang lalu"
-    match = re.search(pattern4, title)
-    if match:
-        jumlah, satuan = match.groups()
-        try:
-            delta = timedelta(minutes=int(jumlah)) if satuan == "menit" else timedelta(hours=int(jumlah))
-            dt = datetime.now(zona) - delta
-            return dt.strftime("%Y-%m-%d %H:%M")
-        except:
-            pass
-
+            
     return "" # Mengembalikan string kosong jika tidak ditemukan, untuk menghindari tanggal yang salah
+
 
 @st.cache_data
 def is_relevant(title, query, content="", threshold=0.5):
@@ -188,7 +168,7 @@ def scrape_detik(query, max_articles=15):
                         title = title_tag.get_text(strip=True)
                         description = description_tag.get_text(strip=True) if description_tag else ""
                         published_at = date_tag.get('title', '') if date_tag else ''
-                        published_at = extract_datetime_from_title(published_at)
+                        published_at = extract_datetime_from_title(published_at, link) # Tambahkan link sebagai parameter
 
                         if not published_at:
                             jakarta_tz = pytz.timezone("Asia/Jakarta")
@@ -239,7 +219,7 @@ def scrape_cnn_fixed(query, max_results=10):
                 summary = article.find('span', class_='box--card__desc').get_text(strip=True) if article.find('span', class_='box--card__desc') else ""
                 published = article.find('span', class_='box--card__date').get_text(strip=True) if article.find('span', class_='box--card__date') else ""
                 
-                published_at = extract_datetime_from_title(published)
+                published_at = extract_datetime_from_title(published, link) # Tambahkan link sebagai parameter
                 
                 if not published_at:
                     jakarta_tz = pytz.timezone("Asia/Jakarta")
@@ -316,13 +296,13 @@ def scrape_kompas_fixed(query, max_articles=10):
                         content = " ".join([p.get_text(strip=True) for p in content_paras])
 
                         time_tag = art_soup.select_one("div.read__time")
-                        published = extract_datetime_from_title(time_tag.get_text(strip=True)) if time_tag else ""
+                        published = extract_datetime_from_title(time_tag.get_text(strip=True) if time_tag else "", url) # Tambahkan url sebagai parameter
 
                         if not published or published.endswith("00:00"):
-                            url_match = re.search(r"/(\d{4})/(\d{2})/(\d{2})/(\d{2})(\d{2})", url)
+                            url_match = re.search(r"/(\d{4})/(\d{2})/(\d{2})", url)
                             if url_match:
-                                y, m, d, h, mi = url_match.groups()
-                                dt = datetime.strptime(f"{y}-{m}-{d} {h}:{mi}", "%Y-%m-%d %H:%M")
+                                y, m, d = url_match.groups()
+                                dt = datetime.strptime(f"{y}-{m}-{d}", "%Y-%m-%d")
                                 dt = pytz.timezone("Asia/Jakarta").localize(dt)
                                 published = dt.strftime("%Y-%m-%d %H:%M")
 
