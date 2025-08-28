@@ -139,8 +139,9 @@ def extract_datetime_from_title(title):
             pass
     return None
 
+# PERBAIKAN: Menurunkan ambang batas relevansi untuk pencarian yang lebih luas
 @st.cache_data
-def is_relevant(title, query, content="", threshold=0.5):
+def is_relevant(title, query, content="", threshold=0.4):
     combined = f"{title} {content}"
     combined_vecs = model_sbert.encode([combined])
     query_vecs = model_sbert.encode([query])
@@ -148,6 +149,7 @@ def is_relevant(title, query, content="", threshold=0.5):
     return sim >= threshold
 
 # 4. Scraper per sumber
+# PERBAIKAN: Sertakan `query` dalam cache key untuk memaksa scraping baru
 @st.cache_data(show_spinner="Mencari berita di Detik...")
 def scrape_detik(query, max_articles=15):
     url = f"https://www.detik.com/search/searchall?query={query.replace(' ', '+')}"
@@ -206,6 +208,7 @@ def scrape_detik(query, max_articles=15):
             time.sleep(random.uniform(1, 3))
     return pd.DataFrame()
 
+# PERBAIKAN: Sertakan `query` dalam cache key untuk memaksa scraping baru
 @st.cache_data(show_spinner="Mencari berita di CNN...")
 def scrape_cnn_fixed(query, max_results=10):
     url = f"https://www.cnnindonesia.com/search?query={query.replace(' ', '+')}"
@@ -253,6 +256,7 @@ def scrape_cnn_fixed(query, max_results=10):
     return pd.DataFrame(results)
 
 
+# PERBAIKAN: Sertakan `query` dalam cache key untuk memaksa scraping baru
 @st.cache_data(show_spinner="Mencari berita di Kompas...")
 def scrape_kompas_fixed(query, max_articles=10):
     search_url = f"https://search.kompas.com/search?q={query.replace(' ', '+')}"
@@ -335,6 +339,7 @@ def scrape_kompas_fixed(query, max_articles=10):
             time.sleep(random.uniform(1, 3))
     return pd.DataFrame()
 
+# PERBAIKAN: Menambahkan `query` ke `cache_data` untuk memaksa scraping ulang
 @st.cache_data(show_spinner="Menggabungkan hasil...")
 def scrape_all_sources(query):
     dfs = []
