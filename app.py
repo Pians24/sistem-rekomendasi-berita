@@ -381,6 +381,7 @@ def save_interaction_to_github(user_id, query, all_articles, clicked_urls):
             "content": str(row.get('content', '')),
             "source": str(row.get('source', '')),
             "click_time": now,
+            "publishedAt": row.get('publishedAt', ''), # Menambahkan kolom publishedAt ke riwayat
             "label": 1 if row.get('url', '') in clicked_urls else 0
         }
         history_list.append(article_log)
@@ -583,8 +584,9 @@ def main():
                         st.info("❗ Tidak ditemukan berita dalam riwayat untuk topik ini.")
                         continue
                     
-                    df_filtered['publishedAt_dt'] = pd.to_datetime(df_filtered['click_time'], format="%A, %d %B %Y %H:%M", errors='coerce')
-                    df_filtered = df_filtered.dropna(subset=['publishedAt_dt'])
+                    # Tambahkan baris ini untuk memastikan kolom 'publishedAt' ada
+                    if 'publishedAt' not in df_filtered.columns:
+                        df_filtered['publishedAt'] = df_filtered['click_time']
                     
                     df_filtered['processed'] = df_filtered.apply(lambda row: preprocess_text(row['title'] + ' ' + str(row.get('content', ''))), axis=1)
                     
@@ -613,15 +615,13 @@ def main():
                     for i, row in articles_to_show.iterrows():
                         source_name = get_source_from_url(row['url'])
                         
-                        try:
-                            dt_obj = datetime.strptime(row['click_time'], "%A, %d %B %Y %H:%M")
-                            formatted_time = dt_obj.strftime("%Y-%m-%d %H:%M")
-                        except ValueError:
-                            formatted_time = row['click_time']
+                        # BARIS YANG DIUBAH
+                        # Menggunakan 'publishedAt' dari file history jika ada, jika tidak, kembali ke 'click_time'
+                        display_time = row.get('publishedAt', row.get('click_time', 'Tidak Diketahui'))
 
                         st.markdown(f"**[{source_name}]** {row['title']}")
                         st.markdown(f"[{row['url']}]({row['url']})")
-                        st.write(f"Waktu: *{formatted_time}*")
+                        st.write(f"Waktu Publikasi: *{display_time}*")
                         st.write(f"Skor: `{row[skor_key]:.2f}`")
                         st.markdown("---")
     else:
