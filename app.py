@@ -659,10 +659,8 @@ def main():
         st.stop()
 
   st.title("📰 Sistem Rekomendasi Berita")
-st.markdown(
-    "Aplikasi ini merekomendasikan berita dari Detik, CNN Indonesia, dan Kompas "
-    "berdasarkan riwayat topik Anda. Waktu publikasi diambil langsung dari halaman artikel."
-)
+st.markdown("Aplikasi ini merekomendasikan berita dari Detik, CNN Indonesia, dan Kompas" 
+"berdasarkan riwayat topik Anda. Waktu publikasi diambil langsung dari halaman artikel.")
 
     if st.sidebar.button("Bersihkan Cache & Muat Ulang"):
         st.cache_data.clear(); st.cache_resource.clear()
