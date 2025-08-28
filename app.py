@@ -189,6 +189,7 @@ def scrape_detik(query, max_articles=15):
                         art_res = requests.get(link, headers=headers_article, timeout=10)
                         if art_res.status_code == 200:
                             art_soup = BeautifulSoup(art_res.content, 'html.parser')
+                            # Pola untuk Detik
                             date_tag = art_soup.select_one("div.detail__date")
                             if date_tag:
                                 date_text = date_tag.get_text(strip=True)
@@ -254,6 +255,7 @@ def scrape_cnn_fixed(query, max_results=10):
                         published_at = ''
                         if art_res.status_code == 200:
                             art_soup = BeautifulSoup(art_res.content, 'html.parser')
+                            # Pola untuk CNN
                             date_tag = art_soup.select_one("div.detail__date")
                             if date_tag:
                                 date_text = date_tag.get_text(strip=True)
@@ -441,18 +443,19 @@ def get_recent_queries_by_days(user_id, df, days=3):
 
     if 'publishedAt' not in df_user.columns:
         df_user['publishedAt'] = df_user['click_time']
-
-    df_user['date_to_process'] = df_user['publishedAt']
+    
+    # Gunakan 'click_time' untuk pengelompokan riwayat
+    df_user['date_to_process'] = df_user['click_time']
 
     df_user["timestamp"] = pd.to_datetime(
         df_user["date_to_process"],
-        format="%Y-%m-%d %H:%M",
+        format="%A, %d %B %Y %H:%M",
         errors='coerce'
     )
     df_user["timestamp"].fillna(
         pd.to_datetime(
             df_user["date_to_process"],
-            format="%A, %d %B %Y %H:%M",
+            format="%Y-%m-%d %H:%M",
             errors='coerce'
         ), inplace=True
     )
@@ -474,12 +477,12 @@ def get_recent_queries_by_days(user_id, df, days=3):
     if recent_df.empty:
         return {}
 
-    recent_df.loc[:, 'date'] = recent_df['timestamp'].dt.strftime('%Y-%m-%d')
+    recent_df.loc[:, 'date'] = recent_df['timestamp'].dt.strftime('%d %B %Y')
     grouped_queries = recent_df.groupby('date')['query'].unique().to_dict()
 
     sorted_dates = sorted(
         grouped_queries.keys(),
-        key=lambda d: datetime.strptime(d, '%Y-%m-%d'),
+        key=lambda d: datetime.strptime(d, '%d %B %Y'),
         reverse=True
     )
     ordered_grouped_queries = {date: grouped_queries[date] for date in sorted_dates}
