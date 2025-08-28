@@ -11,7 +11,7 @@ import feedparser
 from bs4 import BeautifulSoup
 from datetime import datetime, timedelta
 from sklearn.linear_model import LogisticRegression
-from sklearn.model_split_selection import train_test_split
+from sklearn.model_selection import train_test_split
 from sklearn.metrics import accuracy_score, precision_score, recall_score, f1_score
 from sklearn.metrics.pairwise import cosine_similarity
 from sentence_transformers import SentenceTransformer
@@ -71,27 +71,19 @@ def preprocess_text(text):
     text = re.sub(r'\s+', ' ', text).strip()
     return text
 
-# 3. Ekstrak waktu (DIPERBAIKI)
+# 3. Ekstrak waktu
 @st.cache_data
 def extract_datetime_from_title(title):
+    bulan_mapping = {
+        "Jan": "01", "Feb": "02", "Mar": "03", "Apr": "04", "Mei": "05", "Jun": "06",
+        "Jul": "07", "Agu": "08", "Ags": "08", "Agustus": "08", "Sep": "09",
+        "September": "09", "Okt": "10", "Oktober": "10", "Nov": "11",
+        "November": "11", "Des": "12", "Desember": "12", "Januari": "01",
+        "Februari": "02", "Maret": "03", "April": "04", "Juni": "06", "Juli": "07"
+    }
     zona = pytz.timezone("Asia/Jakarta")
-    now = datetime.now(zona)
 
-    # Pola untuk "X waktu yang lalu"
-    match_relative = re.search(r"(\d+)\s+(menit|jam|hari)\s+yang lalu", title, re.IGNORECASE)
-    if match_relative:
-        jumlah, satuan = match_relative.groups()
-        jumlah = int(jumlah)
-        if "menit" in satuan:
-            dt = now - timedelta(minutes=jumlah)
-        elif "jam" in satuan:
-            dt = now - timedelta(hours=jumlah)
-        elif "hari" in satuan:
-            dt = now - timedelta(days=jumlah)
-        return dt.strftime("%Y-%m-%d %H:%M")
-
-    # Pola untuk format tanggal Kompas "Kompas.com - 25/08/2025, 11:48"
-    pattern_kompas = r"\s*-\s*(\d{2})/(\d{2})/(\d{4}),\s*(\d{2}:\d{2})"
+    pattern_kompas = r"Kompas\.com\s*-\s*(\d{2})/(\d{2})/(\d{4}),\s*(\d{2}:\d{2})"
     match = re.search(pattern_kompas, title)
     if match:
         day, month, year, time_str = match.groups()
@@ -101,26 +93,61 @@ def extract_datetime_from_title(title):
         except:
             pass
 
-    # Pola untuk format lain (contoh: Detik.com atau CNN)
-    match_absolute = re.search(r"(\d{4}-\d{2}-\d{2}\s\d{2}:\d{2})", title)
-    if match_absolute:
+    pattern1 = r"(?:\w+, )?(\d{1,2}) (\w+) (\d{4}) (\d{2}:\d{2})"
+    match = re.search(pattern1, title)
+    if match:
+        day, month_str, year, time_str = match.groups()
+        month = bulan_mapping.get(month_str)
+        if month:
+            try:
+                dt = datetime.strptime(f"{year}-{month}-{int(day):02d} {time_str}", "%Y-%m-%d %H:%M")
+                return zona.localize(dt).strftime("%Y-%m-%d %H:%M")
+            except:
+                pass
+
+    pattern2 = r"(\d{1,2}) (\w+) (\d{4})"
+    match = re.search(pattern2, title)
+    if match:
+        day, month_str, year = match.groups()
+        month = bulan_mapping.get(month_str)
+        if month:
+            try:
+                dt = datetime.strptime(f"{year}-{month}-{int(day):02d}", "%Y-%m-%d")
+                return zona.localize(dt).strftime("%Y-%m-%d %H:%M")
+            except:
+                pass
+
+    pattern3 = r"(\d{2})/(\d{2})/(\d{4}), (\d{2}:\d{2})"
+    match = re.search(pattern3, title)
+    if match:
+        day, month, year, time_str = match.groups()
         try:
-            dt = datetime.strptime(match_absolute.group(1), "%Y-%m-%d %H:%M")
+            dt = datetime.strptime(f"{year}-{month}-{day} {time_str}", "%Y-%m-%d %H:%M")
             return zona.localize(dt).strftime("%Y-%m-%d %H:%M")
         except:
             pass
 
-    return now.strftime("%Y-%m-%d %H:%M")
+    pattern4 = r"(\d+)\s+(menit|jam)\s+yang lalu"
+    match = re.search(pattern4, title)
+    if match:
+        jumlah, satuan = match.groups()
+        try:
+            delta = timedelta(minutes=int(jumlah)) if satuan == "menit" else timedelta(hours=int(jumlah))
+            dt = datetime.now(zona) - delta
+            return dt.strftime("%Y-%m-%d %H:%M")
+        except:
+            pass
+    return None
 
 @st.cache_data
-def is_relevant(title, query, content="", threshold=0.4): # Disesuaikan ke 0.4 untuk hasil yang lebih banyak
+def is_relevant(title, query, content="", threshold=0.35):
     combined = f"{title} {content}"
     combined_vecs = model_sbert.encode([combined])
     query_vecs = model_sbert.encode([query])
     sim = cosine_similarity(combined_vecs, query_vecs)[0][0]
     return sim >= threshold
 
-# 4. Scraper per sumber (DIPERBAIKI)
+# 4. Scraper per sumber
 @st.cache_data(show_spinner="Mencari berita di Detik...")
 def scrape_detik(query, max_articles=15):
     url = f"https://www.detik.com/search/searchall?query={query.replace(' ', '+')}"
@@ -136,7 +163,6 @@ def scrape_detik(query, max_articles=15):
             res = requests.get(url, headers=headers, timeout=10)
             if res.status_code == 200:
                 soup = BeautifulSoup(res.content, "html.parser")
-                # PERBAIKAN: Selektor HTML diperbarui
                 articles_raw = soup.select("article.list-content__item")
                 if not articles_raw:
                     time.sleep(random.uniform(1, 3))
@@ -180,7 +206,6 @@ def scrape_detik(query, max_articles=15):
             time.sleep(random.uniform(1, 3))
     return pd.DataFrame()
 
-# PERBAIKAN: Sertakan `query` dalam cache key untuk memaksa scraping baru
 @st.cache_data(show_spinner="Mencari berita di CNN...")
 def scrape_cnn_fixed(query, max_results=10):
     url = f"https://www.cnnindonesia.com/search?query={query.replace(' ', '+')}"
@@ -192,7 +217,6 @@ def scrape_cnn_fixed(query, max_results=10):
         
         if res.status_code == 200:
             soup = BeautifulSoup(res.content, 'html.parser')
-            # PERBAIKAN: Selektor HTML diperbarui
             articles = soup.find_all('article', class_='box--card')
             
             for article in articles:
@@ -222,8 +246,6 @@ def scrape_cnn_fixed(query, max_results=10):
                     })
                 if len(results) >= max_results:
                     return pd.DataFrame(results)
-        else:
-            st.warning(f"Gagal scraping CNN: Status code {res.status_code}. Mengembalikan DataFrame kosong.")
     except Exception as e:
         st.warning(f"Gagal scraping CNN: {e}. Mengembalikan DataFrame kosong.")
         time.sleep(random.uniform(1, 3))
@@ -231,7 +253,6 @@ def scrape_cnn_fixed(query, max_results=10):
     return pd.DataFrame(results)
 
 
-# PERBAIKAN: Sertakan `query` dalam cache key untuk memaksa scraping baru
 @st.cache_data(show_spinner="Mencari berita di Kompas...")
 def scrape_kompas_fixed(query, max_articles=10):
     search_url = f"https://search.kompas.com/search?q={query.replace(' ', '+')}"
@@ -250,11 +271,9 @@ def scrape_kompas_fixed(query, max_articles=10):
             
             if res.status_code == 200:
                 soup = BeautifulSoup(res.text, "html.parser")
-                # PERBAIKAN: Selektor HTML diperbarui
                 articles = soup.select("div.articleItem")[:max_articles]
                 
                 if not articles:
-                    st.warning("Scraper Kompas tidak menemukan artikel di halaman pencarian.")
                     return pd.DataFrame()
 
                 for item in articles:
@@ -316,7 +335,6 @@ def scrape_kompas_fixed(query, max_articles=10):
             time.sleep(random.uniform(1, 3))
     return pd.DataFrame()
 
-# PERBAIKAN: Menambahkan `query` ke `cache_data` untuk memaksa scraping ulang
 @st.cache_data(show_spinner="Menggabungkan hasil...")
 def scrape_all_sources(query):
     dfs = []
@@ -680,7 +698,7 @@ def main():
             for i, row in st.session_state.current_recommended_results.iterrows():
                 source_name = get_source_from_url(row['url'])
                 
-                # PERBAIKAN: Sintaks HTML yang benar dan fungsional
+                # Perbaikan di sini: Sintaks HTML yang benar dan fungsional
                 button_html = f"""<style>.styled-button {{ background-color: #007bff; color: white; padding: 10px 20px; text-align: center; text-decoration: none; display: inline-block; font-size: 16px; margin: 4px 2px; cursor: pointer; border-radius: 8px; border: none; }}</style><button class="styled-button" onclick="window.parent.postMessage({{ streamlit: true, event: 'st_event', data: {{ url: '{row['url']}' }} }}, '*'); window.open('{row['url']}', '_blank');">Buka Artikel & Catat Interaksi</button>"""
 
                 st.markdown(f"**[{source_name}]** {row['title']}")
