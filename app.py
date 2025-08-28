@@ -419,18 +419,29 @@ def append_click_to_github(user_id, query, row_dict):
 
 # ---------- Analitik ----------
 def get_recent_queries_by_days(user_id, df, days=3):
-    if df.empty or "user_id" not in df.columns or "click_time" not in df.columns: return {}
-    d = df[df["user_id"]==user_id].copy()
+    if df.empty or "user_id" not in df.columns or "click_time" not in df.columns:
+        return {}
+
+    d = df[df["user_id"] == user_id].copy()
+
+    # parse click_time → naive datetime (tanpa TZ)
     d["ts"] = pd.to_datetime(d["click_time"], format="%A, %d %B %Y %H:%M", errors="coerce")
     d["ts"] = d["ts"].fillna(pd.to_datetime(d["click_time"], errors="coerce"))
     d = d.dropna(subset=["ts"])
-    now = datetime.now(TZ_JKT); cutoff = now - timedelta(days=days)
+
+    # cutoff juga naive → aman dibandingkan dengan d["ts"]
+    now = datetime.now()
+    cutoff = now - timedelta(days=days)
     d = d[d["ts"] >= cutoff]
-    if d.empty: return {}
+
+    if d.empty:
+        return {}
+
     d["date"] = d["ts"].dt.strftime("%d %B %Y")
-    grouped = d.groupby('date')['query'].unique().to_dict()
+    grouped = d.groupby("date")["query"].unique().to_dict()
     sorted_dates = sorted(grouped.keys(), key=lambda x: datetime.strptime(x, "%d %B %Y"), reverse=True)
     return {k: grouped[k] for k in sorted_dates}
+
 
 def get_trending_query_by_days(user_id, df, days=3):
     """Hitung frekuensi kemunculan query per hari (distinct day)."""
@@ -560,8 +571,11 @@ def train_model(df_train):
 def main():
     intercept_query_params_and_log()
 
-    st.title("📰 Rekomendasi Berita")
-    st.caption("Detik • CNN Indonesia • Kompas — SBERT + booster personalisasi. Waktu publikasi diambil dari halaman artikel.")
+    st.title("📰 Sistem Rekomendasi Berita")
+st.markdown(
+    "Aplikasi ini merekomendasikan berita dari Detik, CNN Indonesia, dan Kompas "
+    "berdasarkan riwayat topik Anda. Waktu publikasi diambil langsung dari halaman artikel."
+)
 
     if st.sidebar.button("Bersihkan Cache & Muat Ulang"):
         st.cache_data.clear(); st.cache_resource.clear()
