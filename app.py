@@ -148,7 +148,7 @@ def is_relevant(title, query, content="", threshold=0.5):
     sim = cosine_similarity(combined_vecs, query_vecs)[0][0]
     return sim >= threshold
 
-# 4. Scraper per sumber (MENGGUNAKAN RSS FEED)
+# 4. Scraper per sumber (DIPERBAIKI)
 @st.cache_data(show_spinner="Mencari berita di Detik...")
 def scrape_detik(query, max_articles=15):
     url = f"https://www.detik.com/search/searchall?query={query.replace(' ', '+')}"
@@ -183,6 +183,7 @@ def scrape_detik(query, max_articles=15):
                     published_at = ''
 
                     if is_relevant(title, query, description):
+                        # Mengunjungi halaman artikel untuk mengambil tanggal yang akurat
                         time.sleep(random.uniform(1, 2))
                         headers_article = {"User-Agent": random.choice(USER_AGENTS)}
                         art_res = requests.get(link, headers=headers_article, timeout=10)
@@ -414,7 +415,7 @@ def get_recent_queries_by_days(user_id, df, days=3):
 
     if 'publishedAt' not in df_user.columns:
         df_user['publishedAt'] = df_user['click_time']
-    
+
     df_user['date_to_process'] = df_user['click_time']
 
     df_user["timestamp"] = pd.to_datetime(
@@ -446,7 +447,7 @@ def get_recent_queries_by_days(user_id, df, days=3):
 
     if recent_df.empty:
         return {}
-    
+
     recent_df.loc[:, 'date'] = recent_df['timestamp'].dt.strftime('%d %B %Y')
     grouped_queries = recent_df.groupby('date')['query'].unique().to_dict()
 
