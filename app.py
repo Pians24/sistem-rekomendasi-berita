@@ -698,7 +698,7 @@ def main():
                 st.markdown(button_html, unsafe_allow_html=True)
 
                 st.markdown("---")
-        
+            
         if st.session_state.current_query:
             st.info(f"Anda telah mencatat {len(st.session_state.clicked_urls_in_session)} artikel. Data akan disimpan saat Anda memulai pencarian baru.")
 
