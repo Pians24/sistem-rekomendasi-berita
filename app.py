@@ -639,37 +639,49 @@ def _get_query_params():
 
 # ========================= APP =========================
 def main():
-    # Intercept: buka tab baru & catat klik
+    # --- intercept: buka tab artikel + catat klik lewat ?open= ---
     params = _get_query_params()
     if "open" in params:
         raw = params["open"][0] if isinstance(params["open"], list) else params["open"]
         raw_q = params.get("q", [""])[0] if isinstance(params.get("q", [""]), list) else params.get("q", "")
-        url = _b64dec(raw); qx = _b64dec(raw_q)
+        url = _b64dec(raw)
+        qx = _b64dec(raw_q)
         if url and (url not in st.session_state.clicked_urls_in_session):
             st.session_state.clicked_urls_in_session.append(url)
-        st.components.v1.html(f"""
+        st.components.v1.html(
+            f"""
             <script>
-              try{{
+              try {{
                 window.open("{url}", "_blank");
                 const base = window.location.href.split("?")[0];
                 window.history.replaceState({{}}, "", base);
-              }}catch(e){{}}
+              }} catch(e) {{}}
             </script>
-        """, height=0)
+            """,
+            height=0,
+        )
         st.stop()
 
-  st.title("📰 Sistem Rekomendasi Berita")
-st.markdown("Aplikasi ini merekomendasikan berita dari Detik, CNN Indonesia, dan Kompas" 
-"berdasarkan riwayat topik Anda. Waktu publikasi diambil langsung dari halaman artikel.")
+    # --- header ---
+    st.title("📰 Sistem Rekomendasi Berita")
+    st.markdown(
+        "Aplikasi ini merekomendasikan berita dari Detik, CNN Indonesia, dan Kompas "
+        "berdasarkan riwayat topik Anda. Waktu publikasi diambil langsung dari halaman artikel."
+    )
 
+    # --- sidebar utility ---
     if st.sidebar.button("Bersihkan Cache & Muat Ulang"):
-        st.cache_data.clear(); st.cache_resource.clear()
+        st.cache_data.clear()
+        st.cache_resource.clear()
         st.success("Cache dibersihkan. Memuat ulang…")
-        time.sleep(1); st.rerun()
+        time.sleep(1)
+        st.rerun()
 
+    # --- load history (sekali di awal) ---
     if st.session_state.history.empty:
         st.session_state.history = load_history_from_github()
 
+    # --- model personalisasi (opsional, kalau riwayat mencukupi) ---
     st.sidebar.header("Model Personalisasi")
     df_train = build_training_data(USER_ID)
     clf = None
@@ -679,58 +691,66 @@ st.markdown("Aplikasi ini merekomendasikan berita dari Detik, CNN Indonesia, dan
     else:
         st.sidebar.info("Model belum bisa dilatih karena riwayat tidak mencukupi.")
 
-    st.markdown("""
-<style>
-  .cta{
-    background:#007bff;              /* biru solid */
-    color:#fff;
-    padding:10px 16px;
-    border-radius:10px;
-    text-decoration:none;
-    display:inline-flex;
-    align-items:center;
-    gap:8px;
-    font-weight:600;
-    box-shadow:0 4px 12px rgba(0,123,255,.25);
-    transition:transform .06s ease, box-shadow .2s ease, opacity .2s;
-  }
-  .cta:hover{ 
-    transform:translateY(-1px);
-    box-shadow:0 6px 16px rgba(0,123,255,.35);
-    opacity:.96;
-  }
-  .cta:active{ transform:translateY(0); }
-</style>
-""", unsafe_allow_html=True)
+    # --- CSS tombol seragam biru ---
+    st.markdown(
+        """
+        <style>
+          .cta{
+            background:#007bff;
+            color:#fff;
+            padding:10px 16px;
+            border-radius:10px;
+            text-decoration:none;
+            display:inline-flex;
+            align-items:center;
+            gap:8px;
+            font-weight:600;
+            box-shadow:0 4px 12px rgba(0,123,255,.25);
+            transition:transform .06s ease, box-shadow .2s ease, opacity .2s;
+          }
+          .cta:hover{
+            transform:translateY(-1px);
+            box-shadow:0 6px 16px rgba(0,123,255,.35);
+            opacity:.96;
+          }
+          .cta:active{ transform:translateY(0); }
+        </style>
+        """,
+        unsafe_allow_html=True,
+    )
 
-
-    # -------- PENCARIAN BERITA PER TANGGAL (tanpa tombol/counter) --------
+    # ================= PENCARIAN BERITA PER TANGGAL =================
     st.header("📚 Pencarian Berita per Tanggal")
     grouped_queries = get_recent_queries_by_days(USER_ID, st.session_state.history, days=3)
     if grouped_queries:
         for date, queries in grouped_queries.items():
             st.subheader(f"Tanggal {date}")
-            for q in sorted(list(set(queries))):
+            for q in sorted(set(queries)):
                 with st.expander(f"- {q}", expanded=False):
                     with st.spinner("Mengambil berita terbaru dari 3 sumber..."):
                         df_latest = scrape_all_sources(q)
+
                     if df_latest.empty:
                         st.info("❗ Tidak ditemukan berita terbaru untuk topik ini.")
                         continue
+
                     results_latest = recommend(
-                        df_latest, q, clf,
+                        df_latest,
+                        q,
+                        clf,
                         n_per_source=3,
                         min_score=DEFAULT_MIN_SCORE,
-                        use_lr_boost=USE_LR_BOOST, alpha=ALPHA,
-                        per_source_group=PER_SOURCE_GROUP
+                        use_lr_boost=USE_LR_BOOST,
+                        alpha=ALPHA,
+                        per_source_group=PER_SOURCE_GROUP,
                     )
                     if results_latest.empty:
                         st.info("❗ Tidak ada hasil relevan dari portal untuk topik ini.")
                         continue
+
                     for _, row in results_latest.iterrows():
                         src = get_source_from_url(row["url"])
-                        title_disp = row["title"] if row.get("title") else slug_to_title(row.get("url",""))
-                        st.markdown(f"**[{src}]** {title_disp}")
+                        st.markdown(f"**[{src}]** {row['title']}")
                         st.markdown(f"[{row['url']}]({row['url']})")
                         st.write(f"Waktu Publikasi: *{format_display_time(row.get('publishedAt',''))}*")
                         skor = row.get("final_score", row.get("similarity", row.get("sbert_score", 0.0)))
@@ -741,30 +761,33 @@ st.markdown("Aplikasi ini merekomendasikan berita dari Detik, CNN Indonesia, dan
 
     st.markdown("---")
 
-    # -------- REKOMENDASI HARI INI (berdasar frekuensi pencarian 3 hari) --------
+    # ================= REKOMENDASI BERITA HARI INI =================
     st.header("🔥 Rekomendasi Berita Hari Ini")
     trends = trending_by_query_frequency(USER_ID, st.session_state.history, days=3)
     if trends:
         q_top, _ = trends[0]
         with st.spinner("Mencari berita..."):
             df_news = scrape_all_sources(q_top)
+
         if df_news.empty:
             st.info("❗ Tidak ditemukan berita.")
         else:
             results = recommend(
-                df_news, q_top, clf,
+                df_news,
+                q_top,
+                clf,
                 n_per_source=1,
                 min_score=DEFAULT_MIN_SCORE,
-                use_lr_boost=USE_LR_BOOST, alpha=ALPHA,
-                per_source_group=PER_SOURCE_GROUP
+                use_lr_boost=USE_LR_BOOST,
+                alpha=ALPHA,
+                per_source_group=PER_SOURCE_GROUP,
             )
             if results.empty:
                 st.info("❗ Tidak ada hasil relevan.")
             else:
                 for _, row in results.iterrows():
                     src = get_source_from_url(row["url"])
-                    title_disp = row["title"] if row.get("title") else slug_to_title(row.get("url",""))
-                    st.markdown(f"**[{src}]** {title_disp}")
+                    st.markdown(f"**[{src}]** {row['title']}")
                     st.markdown(f"[{row['url']}]({row['url']})")
                     st.write(f"Waktu: *{format_display_time(row.get('publishedAt',''))}*")
                     skor = row.get("final_score", row.get("similarity", row.get("sbert_score", 0.0)))
@@ -776,30 +799,35 @@ st.markdown("Aplikasi ini merekomendasikan berita dari Detik, CNN Indonesia, dan
 
     st.markdown("---")
 
-    # -------- PENCARIAN BEBAS --------
+    # ================= PENCARIAN BEBAS =================
     st.header("🔍 Pencarian Berita")
     search_query = st.text_input("Ketik topik berita yang ingin Anda cari:", key="search_input")
     if st.button("Cari Berita"):
         if search_query:
             if st.session_state.current_query:
                 save_interaction_to_github(
-                    USER_ID, st.session_state.current_query,
+                    USER_ID,
+                    st.session_state.current_query,
                     st.session_state.current_recommended_results,
-                    st.session_state.clicked_urls_in_session
+                    st.session_state.clicked_urls_in_session,
                 )
                 st.cache_data.clear()
                 st.session_state.history = load_history_from_github()
+
             with st.spinner("Mengambil berita dan merekomendasikan..."):
                 st.session_state.current_search_results = scrape_all_sources(search_query)
                 results = recommend(
                     st.session_state.current_search_results,
-                    search_query, clf,
+                    search_query,
+                    clf,
                     n_per_source=3,
                     min_score=DEFAULT_MIN_SCORE,
-                    use_lr_boost=USE_LR_BOOST, alpha=ALPHA,
-                    per_source_group=PER_SOURCE_GROUP
+                    use_lr_boost=USE_LR_BOOST,
+                    alpha=ALPHA,
+                    per_source_group=PER_SOURCE_GROUP,
                 )
                 st.session_state.current_recommended_results = results
+
             st.session_state.show_results = True
             st.session_state.current_query = search_query
             st.session_state.clicked_urls_in_session = []
@@ -814,16 +842,20 @@ st.markdown("Aplikasi ini merekomendasikan berita dari Detik, CNN Indonesia, dan
         else:
             for _, row in st.session_state.current_recommended_results.iterrows():
                 src = get_source_from_url(row["url"])
-                title_disp = row["title"] if row.get("title") else slug_to_title(row.get("url",""))
-                st.markdown(f"**[{src}]** {title_disp}")
+                st.markdown(f"**[{src}]** {row['title']}")
                 st.markdown(f"[{row['url']}]({row['url']})")
                 st.write(f"Waktu: *{format_display_time(row.get('publishedAt',''))}*")
                 skor = row.get("final_score", row.get("similarity", row.get("sbert_score", 0.0)))
                 st.write(f"Skor: `{float(skor):.2f}`")
                 st.markdown(make_logged_link(row["url"], st.session_state.current_query), unsafe_allow_html=True)
                 st.markdown("---")
+
         if st.session_state.current_query:
-            st.info(f"Anda telah mencatat {len(st.session_state.clicked_urls_in_session)} klik artikel. Data akan disimpan saat Anda memulai pencarian baru.")
+            st.info(
+                f"Anda telah mencatat {len(st.session_state.clicked_urls_in_session)} klik artikel. "
+                "Data akan disimpan saat Anda memulai pencarian baru."
+            )
 
 if __name__ == "__main__":
     main()
+
