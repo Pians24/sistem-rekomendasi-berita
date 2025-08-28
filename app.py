@@ -167,7 +167,6 @@ def scrape_detik(query, max_articles=15):
 
                         title = title_tag.get_text(strip=True)
                         description = description_tag.get_text(strip=True) if description_tag else ""
-                        published_at = date_tag.get('title', '') if date_tag else ''
                         published_at = extract_datetime_from_title(published_at, link) # Tambahkan link sebagai parameter
 
                         if not published_at:
@@ -220,7 +219,7 @@ def scrape_cnn_fixed(query, max_results=10):
                 published = article.find('span', class_='box--card__date').get_text(strip=True) if article.find('span', class_='box--card__date') else ""
                 
                 published_at = extract_datetime_from_title(published, link) # Tambahkan link sebagai parameter
-                
+
                 if not published_at:
                     jakarta_tz = pytz.timezone("Asia/Jakarta")
                     published_at = datetime.now(jakarta_tz).strftime("%Y-%m-%d %H:%M")
@@ -297,14 +296,6 @@ def scrape_kompas_fixed(query, max_articles=10):
 
                         time_tag = art_soup.select_one("div.read__time")
                         published = extract_datetime_from_title(time_tag.get_text(strip=True) if time_tag else "", url) # Tambahkan url sebagai parameter
-
-                        if not published or published.endswith("00:00"):
-                            url_match = re.search(r"/(\d{4})/(\d{2})/(\d{2})", url)
-                            if url_match:
-                                y, m, d = url_match.groups()
-                                dt = datetime.strptime(f"{y}-{m}-{d}", "%Y-%m-%d")
-                                dt = pytz.timezone("Asia/Jakarta").localize(dt)
-                                published = dt.strftime("%Y-%m-%d %H:%M")
 
                         if not published:
                             jakarta_tz = pytz.timezone("Asia/Jakarta")
