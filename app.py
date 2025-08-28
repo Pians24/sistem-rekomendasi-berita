@@ -189,7 +189,6 @@ def scrape_detik(query, max_articles=15):
                         art_res = requests.get(link, headers=headers_article, timeout=10)
                         if art_res.status_code == 200:
                             art_soup = BeautifulSoup(art_res.content, 'html.parser')
-                            # Pola untuk Detik
                             date_tag = art_soup.select_one("div.detail__date")
                             if date_tag:
                                 date_text = date_tag.get_text(strip=True)
@@ -255,7 +254,6 @@ def scrape_cnn_fixed(query, max_results=10):
                         published_at = ''
                         if art_res.status_code == 200:
                             art_soup = BeautifulSoup(art_res.content, 'html.parser')
-                            # Pola untuk CNN
                             date_tag = art_soup.select_one("div.detail__date")
                             if date_tag:
                                 date_text = date_tag.get_text(strip=True)
@@ -443,8 +441,7 @@ def get_recent_queries_by_days(user_id, df, days=3):
 
     if 'publishedAt' not in df_user.columns:
         df_user['publishedAt'] = df_user['click_time']
-    
-    # Gunakan 'click_time' untuk pengelompokan riwayat
+
     df_user['date_to_process'] = df_user['click_time']
 
     df_user["timestamp"] = pd.to_datetime(
