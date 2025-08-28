@@ -660,8 +660,12 @@ def main():
                         
                         display_time = row.get('publishedAt', 'Tidak Diketahui')
                         try:
+                            # Mengubah logika untuk menampilkan hanya tanggal jika waktu 00:00
                             dt_obj = datetime.strptime(display_time, "%Y-%m-%d %H:%M")
-                            formatted_time = dt_obj.strftime("%d %B %Y %H:%M")
+                            if dt_obj.strftime("%H:%M") == "00:00":
+                                formatted_time = dt_obj.strftime("%d %B %Y")
+                            else:
+                                formatted_time = dt_obj.strftime("%d %B %Y %H:%M")
                         except (ValueError, TypeError):
                             formatted_time = display_time
 
@@ -693,7 +697,18 @@ def main():
                     source_name = get_source_from_url(row['url'])
                     st.markdown(f"**[{source_name}]** {row['title']}")
                     st.markdown(row['url'])
-                    st.write(f"Waktu: *{row['publishedAt']}*")
+                    
+                    display_time = row.get('publishedAt', 'Tidak Diketahui')
+                    try:
+                        dt_obj = datetime.strptime(display_time, "%Y-%m-%d %H:%M")
+                        if dt_obj.strftime("%H:%M") == "00:00":
+                            formatted_time = dt_obj.strftime("%d %B %Y")
+                        else:
+                            formatted_time = dt_obj.strftime("%d %B %Y %H:%M")
+                    except (ValueError, TypeError):
+                        formatted_time = display_time
+
+                    st.write(f"Waktu: *{formatted_time}*")
                     skor_key = 'final_score' if 'final_score' in row else 'similarity'
                     st.write(f"Skor: `{row[skor_key]:.2f}`")
                     st.markdown("---")
@@ -737,7 +752,18 @@ def main():
 
                 st.markdown(f"**[{source_name}]** {row['title']}")
                 st.markdown(f"[{row['url']}]({row['url']})")
-                st.write(f"Waktu: *{row['publishedAt']}*")
+                
+                display_time = row.get('publishedAt', 'Tidak Diketahui')
+                try:
+                    dt_obj = datetime.strptime(display_time, "%Y-%m-%d %H:%M")
+                    if dt_obj.strftime("%H:%M") == "00:00":
+                        formatted_time = dt_obj.strftime("%d %B %Y")
+                    else:
+                        formatted_time = dt_obj.strftime("%d %B %Y %H:%M")
+                except (ValueError, TypeError):
+                    formatted_time = display_time
+
+                st.write(f"Waktu: *{formatted_time}*")
                 skor_key = 'final_score' if 'final_score' in row else 'similarity'
                 st.write(f"Skor: `{row[skor_key]:.2f}`")
 
