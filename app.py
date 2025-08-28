@@ -658,8 +658,11 @@ def main():
         """, height=0)
         st.stop()
 
-    st.title("📰 Rekomendasi Berita")
-    st.markdown("Detik • CNN Indonesia • Kompas — SBERT + booster personalisasi. Waktu publikasi diambil dari halaman artikel.")
+  st.title("📰 Sistem Rekomendasi Berita")
+st.markdown(
+    "Aplikasi ini merekomendasikan berita dari Detik, CNN Indonesia, dan Kompas "
+    "berdasarkan riwayat topik Anda. Waktu publikasi diambil langsung dari halaman artikel."
+)
 
     if st.sidebar.button("Bersihkan Cache & Muat Ulang"):
         st.cache_data.clear(); st.cache_resource.clear()
