@@ -188,10 +188,24 @@ def scrape_detik(query, max_articles=15):
                         art_res = requests.get(link, headers=headers_article, timeout=10)
                         if art_res.status_code == 200:
                             art_soup = BeautifulSoup(art_res.content, 'html.parser')
-                            date_tag = art_soup.find('div', class_='detail__date')
-                            if date_tag:
-                                date_text = date_tag.get_text(strip=True)
-                                published_at = extract_datetime_from_title(date_text, link)
+                            
+                            # Mengambil dari JSON-LD atau meta tags sebagai prioritas
+                            try:
+                                json_ld_data = art_soup.find('script', type='application/ld+json')
+                                if json_ld_data:
+                                    data_json = json.loads(json_ld_data.string)
+                                    published_at = data_json.get('datePublished', '')
+                                    if published_at:
+                                        dt_obj = datetime.fromisoformat(published_at)
+                                        published_at = dt_obj.strftime("%Y-%m-%d %H:%M")
+                            except (AttributeError, json.JSONDecodeError):
+                                pass
+
+                            if not published_at:
+                                date_tag = art_soup.find('div', class_='detail__date')
+                                if date_tag:
+                                    date_text = date_tag.get_text(strip=True)
+                                    published_at = extract_datetime_from_title(date_text, link)
 
                         if not published_at:
                             jakarta_tz = pytz.timezone("Asia/Jakarta")
@@ -228,7 +242,6 @@ def scrape_cnn_fixed(query, max_results=10):
         "https://www.cnnindonesia.com/gaya-hidup/rss",
     ]
     results = []
-
     USER_AGENTS = [
         "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/108.0.0.0 Safari/537.36",
         "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/109.0.0.0 Safari/537.36",
