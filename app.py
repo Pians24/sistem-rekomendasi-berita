@@ -76,6 +76,41 @@ def preprocess_text(text):
 def extract_datetime_from_title(title, url=None):
     zona = pytz.timezone("Asia/Jakarta")
     now = datetime.now(zona)
+    
+    # Mapping nama bulan dalam bahasa Indonesia dan Inggris
+    bulan_map_id = {
+        "Jan": "01", "Feb": "02", "Mar": "03", "Apr": "04", "Mei": "05", "Jun": "06",
+        "Jul": "07", "Agu": "08", "Sep": "09", "Okt": "10", "Nov": "11", "Des": "12",
+        "Januari": "01", "Februari": "02", "Maret": "03", "April": "04", "Mei": "05", "Juni": "06",
+        "Juli": "07", "Agustus": "08", "September": "09", "Oktober": "10", "November": "11", "Desember": "12"
+    }
+    bulan_map_en = {
+        "Jan": "01", "Feb": "02", "Mar": "03", "Apr": "04", "May": "05", "Jun": "06",
+        "Jul": "07", "Aug": "08", "Sep": "09", "Oct": "10", "Nov": "11", "Dec": "12"
+    }
+
+    # Pola untuk Detik: "Rabu, 27 Agu 2025 18:47 WIB"
+    match_detik_date = re.search(r"(\w+, \d{1,2} \w+ \d{4} \d{2}:\d{2})", title)
+    if match_detik_date:
+        date_time_str = match_detik_date.group(1)
+        # Mengganti nama bulan
+        for key, value in bulan_map_id.items():
+            date_time_str = date_time_str.replace(key, value)
+        try:
+            dt_obj = datetime.strptime(date_time_str, "%A, %d %m %Y %H:%M")
+            return zona.localize(dt_obj).strftime("%Y-%m-%d %H:%M")
+        except ValueError:
+            pass
+
+    # Pola untuk CNN: "Rabu, 27/08/2025 18:47 WIB"
+    match_cnn_date = re.search(r"(\w+), (\d{2})/(\d{2})/(\d{4}) (\d{2}:\d{2})", title)
+    if match_cnn_date:
+        day_str, day, month, year, time_str = match_cnn_date.groups()
+        try:
+            dt_obj = datetime.strptime(f"{year}-{month}-{day} {time_str}", "%Y-%m-%d %H:%M")
+            return zona.localize(dt_obj).strftime("%Y-%m-%d %H:%M")
+        except ValueError:
+            pass
 
     # Pola untuk "X waktu yang lalu"
     match_relative = re.search(r"(\d+)\s+(menit|jam|hari|minggu)\s+yang lalu", title, re.IGNORECASE)
@@ -145,6 +180,14 @@ def extract_datetime_from_title(title, url=None):
             pass
             
     return ""
+
+@st.cache_data
+def is_relevant(title, query, content="", threshold=0.5):
+    combined = f"{title} {content}"
+    combined_vecs = model_sbert.encode([combined])
+    query_vecs = model_sbert.encode([query])
+    sim = cosine_similarity(combined_vecs, query_vecs)[0][0]
+    return sim >= threshold
 
 # 4. Scraper per sumber (DIPERBAIKI)
 @st.cache_data(show_spinner="Mencari berita di Detik...")
@@ -475,7 +518,6 @@ def get_recent_queries_by_days(user_id, df, days=3):
     if recent_df.empty:
         return {}
     
-    # Perbaikan di baris ini untuk format yang lebih lengkap
     recent_df.loc[:, 'date'] = recent_df['timestamp'].dt.strftime('%d %B %Y')
     grouped_queries = recent_df.groupby('date')['query'].unique().to_dict()
 
@@ -737,6 +779,7 @@ def main():
                     st.write(f"Waktu: *{formatted_time}*")
                     skor_key = 'final_score' if 'final_score' in row else 'similarity'
                     st.write(f"Skor: `{row[skor_key]:.2f}`")
+
                     st.markdown("---")
     else:
         st.info("🔥 Tidak ada topik yang sering dicari dalam 3 hari terakhir.")
