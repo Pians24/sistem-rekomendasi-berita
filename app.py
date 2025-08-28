@@ -76,12 +76,13 @@ def preprocess_text(text):
 def extract_datetime_from_title(title, url=None):
     zona = pytz.timezone("Asia/Jakarta")
     now = datetime.now(zona)
-
-    # Pola untuk Detik: "Rabu, 27 Agu 2025 18:47 WIB"
+    
+    # Mapping nama bulan dalam bahasa Indonesia dan Inggris
     bulan_map_detik = {
         "Agu": "08", "Jan": "01", "Feb": "02", "Mar": "03", "Apr": "04", "Mei": "05",
         "Jun": "06", "Jul": "07", "Sep": "09", "Okt": "10", "Nov": "11", "Des": "12"
     }
+    # Pola untuk Detik: "Rabu, 27 Agu 2025 18:47 WIB"
     match_detik_date = re.search(r"(\w+, \d{1,2}) (\w+) (\d{4}) (\d{2}:\d{2})", title)
     if match_detik_date:
         day_str, day, month_str, year, time_str = match_detik_date.groups()
@@ -93,15 +94,17 @@ def extract_datetime_from_title(title, url=None):
             except ValueError:
                 pass
 
-    # Pola untuk CNN: "Rabu, 27/08/2025 18:47 WIB"
-    match_cnn_date = re.search(r"(\w+), (\d{2})/(\d{2})/(\d{4}) (\d{2}:\d{2})", title)
+    # Pola untuk CNN: "Selasa, 26 Agu 2025 15:48 WIB"
+    match_cnn_date = re.search(r"(\w+), (\d{1,2}) (\w+) (\d{4}) (\d{2}:\d{2})", title)
     if match_cnn_date:
-        day_str, day, month, year, time_str = match_cnn_date.groups()
-        try:
-            dt_obj = datetime.strptime(f"{year}-{month}-{day} {time_str}", "%Y-%m-%d %H:%M")
-            return zona.localize(dt_obj).strftime("%Y-%m-%d %H:%M")
-        except ValueError:
-            pass
+        day_str, day, month_str, year, time_str = match_cnn_date.groups()
+        month_num = bulan_map_detik.get(month_str, "00")
+        if month_num != "00":
+            try:
+                dt_obj = datetime.strptime(f"{year}-{month_num}-{day} {time_str}", "%Y-%m-%d %H:%M")
+                return zona.localize(dt_obj).strftime("%Y-%m-%d %H:%M")
+            except ValueError:
+                pass
 
     # Pola untuk Kompas di URL: /2025/08/25/11480341/
     if url and "kompas.com" in url:
@@ -183,7 +186,6 @@ def scrape_detik(query, max_articles=15):
                     published_at = ''
 
                     if is_relevant(title, query, description):
-                        # Mengunjungi halaman artikel untuk mengambil tanggal yang akurat
                         time.sleep(random.uniform(1, 2))
                         headers_article = {"User-Agent": random.choice(USER_AGENTS)}
                         art_res = requests.get(link, headers=headers_article, timeout=10)
@@ -193,6 +195,10 @@ def scrape_detik(query, max_articles=15):
                             if date_tag:
                                 date_text = date_tag.get_text(strip=True)
                                 published_at = extract_datetime_from_title(date_text, link)
+                            
+                            # Fallback tambahan jika date_tag tidak ditemukan
+                            if not published_at:
+                                published_at = extract_datetime_from_title(art_soup.get_text(), link)
 
                         if not published_at:
                             jakarta_tz = pytz.timezone("Asia/Jakarta")
@@ -247,7 +253,6 @@ def scrape_cnn_fixed(query, max_results=10):
                     summary = article.find('span', class_='box--card__desc').get_text(strip=True) if article.find('span', class_='box--card__desc') else ""
                     
                     if is_relevant(title, query, summary):
-                        # Mengunjungi halaman artikel untuk mengambil tanggal yang akurat
                         time.sleep(random.uniform(1, 2))
                         headers_article = {"User-Agent": random.choice(USER_AGENTS)}
                         art_res = requests.get(link, headers=headers_article, timeout=10)
@@ -433,15 +438,13 @@ def save_interaction_to_github(user_id, query, all_articles, clicked_urls):
     )
 
 def get_recent_queries_by_days(user_id, df, days=3):
-    if df.empty or "user_id" not in df.columns:
+    if df.empty or "user_id" not in df.columns or 'click_time' not in df.columns:
         return {}
 
     df_user = df[df["user_id"] == user_id].copy()
     jakarta_tz = pytz.timezone("Asia/Jakarta")
 
-    if 'publishedAt' not in df_user.columns:
-        df_user['publishedAt'] = df_user['click_time']
-
+    # Logika pengelompokan berdasarkan tanggal klik
     df_user['date_to_process'] = df_user['click_time']
 
     df_user["timestamp"] = pd.to_datetime(
@@ -473,16 +476,30 @@ def get_recent_queries_by_days(user_id, df, days=3):
 
     if recent_df.empty:
         return {}
+    
+    # Perbaikan untuk pengelompokan: ambil tanggal dari publishedAt untuk tampilan
+    recent_df.loc[:, 'published_date_dt'] = pd.to_datetime(recent_df['publishedAt'], errors='coerce')
+    recent_df.dropna(subset=['published_date_dt'], inplace=True)
 
-    recent_df.loc[:, 'date'] = recent_df['timestamp'].dt.strftime('%d %B %Y')
-    grouped_queries = recent_df.groupby('date')['query'].unique().to_dict()
+    # Kelompokkan berdasarkan tanggal klik, tetapi tampilkan tanggal publikasi
+    recent_df.loc[:, 'date_group'] = recent_df['timestamp'].dt.strftime('%d %B %Y')
 
+    grouped_queries = {}
+    for date_group, group_df in recent_df.groupby('date_group'):
+        # Ambil artikel teratas dari grup
+        top_articles = group_df.sort_values(by='published_date_dt', ascending=False).head(3)
+        # Gunakan query unik dari grup ini
+        unique_queries = top_articles['query'].unique()
+        grouped_queries[date_group] = unique_queries
+    
+    # Sortir tanggal berdasarkan tanggal klik, dari terbaru ke terlama
     sorted_dates = sorted(
         grouped_queries.keys(),
         key=lambda d: datetime.strptime(d, '%d %B %Y'),
         reverse=True
     )
     ordered_grouped_queries = {date: grouped_queries[date] for date in sorted_dates}
+
     return ordered_grouped_queries
 
 def get_most_frequent_topics(user_id, df, days=3):
