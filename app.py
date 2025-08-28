@@ -148,7 +148,7 @@ def is_relevant(title, query, content="", threshold=0.5):
     sim = cosine_similarity(combined_vecs, query_vecs)[0][0]
     return sim >= threshold
 
-# 4. Scraper per sumber (DIPERBAIKI)
+# 4. Scraper per sumber (MENGGUNAKAN RSS FEED)
 @st.cache_data(show_spinner="Mencari berita di Detik...")
 def scrape_detik(query, max_articles=15):
     url = f"https://www.detik.com/search/searchall?query={query.replace(' ', '+')}"
@@ -221,65 +221,40 @@ def scrape_detik(query, max_articles=15):
 def scrape_cnn_fixed(query, max_results=10):
     url = f"https://www.cnnindonesia.com/search?query={query.replace(' ', '+')}"
     results = []
-    
-    USER_AGENTS = [
-        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/108.0.0.0 Safari/537.36",
-        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/109.0.0.0 Safari/537.36",
-        "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/108.0.0.0 Safari/537.36"
-    ]
-    headers_main = {"User-Agent": random.choice(USER_AGENTS)}
 
-    try:
-        res = requests.get(url, headers=headers_main, timeout=10)
-        if res.status_code == 200:
-            soup = BeautifulSoup(res.content, 'html.parser')
-            articles_raw = soup.find_all('article', class_='box--card')
-            
-            for article in articles_raw:
-                try:
-                    link_tag = article.find('a', class_='box--card__link')
-                    if not link_tag:
-                        continue
-                    
-                    link = link_tag['href']
-                    title = link_tag.find('span', class_='box--card__title').get_text(strip=True) if link_tag.find('span', class_='box--card__title') else ""
-                    summary = article.find('span', class_='box--card__desc').get_text(strip=True) if article.find('span', class_='box--card__desc') else ""
-                    
-                    if is_relevant(title, query, summary):
-                        time.sleep(random.uniform(1, 2))
-                        headers_article = {"User-Agent": random.choice(USER_AGENTS)}
-                        art_res = requests.get(link, headers=headers_article, timeout=10)
-                        published_at = ''
-                        if art_res.status_code == 200:
-                            art_soup = BeautifulSoup(art_res.content, 'html.parser')
-                            date_tag = art_soup.find('div', class_='detail__date')
-                            if date_tag:
-                                date_text = date_tag.get_text(strip=True)
-                                published_at = extract_datetime_from_title(date_text, link)
-                            
-                        if not published_at:
-                            jakarta_tz = pytz.timezone("Asia/Jakarta")
-                            published_at = datetime.now(jakarta_tz).strftime("%Y-%m-%d %H:%M")
-                        
-                        results.append({
-                            "source": get_source_from_url(link),
-                            "title": title,
-                            "description": summary,
-                            "content": f"{title} {summary}",
-                            "url": link,
-                            "publishedAt": published_at
-                        })
-                    if len(results) >= max_results:
-                        return pd.DataFrame(results)
-                except Exception as e:
-                    continue
-            return pd.DataFrame(results)
-        else:
-            st.warning(f"Gagal scraping CNN: Status code {res.status_code}. Mengembalikan DataFrame kosong.")
-    except (requests.exceptions.RequestException, Exception) as e:
-        st.warning(f"Gagal scraping CNN: {e}. Mengembalikan DataFrame kosong.")
-        time.sleep(random.uniform(1, 3))
-    return pd.DataFrame()
+    feed_urls = [
+        "https://www.cnnindonesia.com/nasional/rss",
+        "https://www.cnnindonesia.com/internasional/rss",
+        "https://www.cnnindonesia.com/ekonomi/rss",
+        "https://www.cnnindonesia.com/olahraga/rss",
+        "https://www.cnnindonesia.com/gaya-hidup/rss",
+    ]
+
+    for feed_url in feed_urls:
+        try:
+            feed = feedparser.parse(feed_url)
+            for entry in feed.entries:
+                title = entry.title
+                link = entry.link
+                summary = entry.summary
+                published = entry.published_parsed
+                published_dt = datetime(*published[:6])
+
+                if query.lower() in title.lower() or is_relevant(title, query, summary):
+                    results.append({
+                        "source": "CNN",
+                        "title": title,
+                        "description": summary,
+                        "content": f"{title} {summary}",
+                        "url": link,
+                        "publishedAt": published_dt.strftime("%Y-%m-%d %H:%M")
+                    })
+        except Exception:
+            continue
+        if len(results) >= max_results:
+            break
+    
+    return pd.DataFrame(results)
 
 @st.cache_data(show_spinner="Mencari berita di Kompas...")
 def scrape_kompas_fixed(query, max_articles=10):
@@ -439,7 +414,7 @@ def get_recent_queries_by_days(user_id, df, days=3):
 
     if 'publishedAt' not in df_user.columns:
         df_user['publishedAt'] = df_user['click_time']
-
+    
     df_user['date_to_process'] = df_user['click_time']
 
     df_user["timestamp"] = pd.to_datetime(
@@ -471,7 +446,7 @@ def get_recent_queries_by_days(user_id, df, days=3):
 
     if recent_df.empty:
         return {}
-
+    
     recent_df.loc[:, 'date'] = recent_df['timestamp'].dt.strftime('%d %B %Y')
     grouped_queries = recent_df.groupby('date')['query'].unique().to_dict()
 
