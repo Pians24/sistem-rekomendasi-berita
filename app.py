@@ -698,8 +698,35 @@ def main():
             for i, row in st.session_state.current_recommended_results.iterrows():
                 source_name = get_source_from_url(row['url'])
                 
-                # Perbaikan di sini: Pastikan kode HTML dalam satu baris untuk menghindari error
-                button_html = f"""<style>.styled-button {{ background-color: #007bff; color: white; padding: 10px 20px; text-align: center; text-decoration: none; display: inline-block; font-size: 16px; margin: 4px 2px; cursor: pointer; border-radius: 8px; border: none; }}</style><button class="styled-button" onclick="window.parent.postMessage({{ streamlit: true, event: 'st_event', data: {{ url: '{row['url']}' }} }}, '*'); window.open('{row['url']}', '_blank');">Buka Artikel & Catat Interaksi</button>"""
+                # Perbaikan sintaks HTML untuk tombol
+                button_html = f"""
+                <style>
+                    .styled-button {{
+                        background-color: #007bff;
+                        color: white;
+                        padding: 10px 20px;
+                        text-align: center;
+                        text-decoration: none;
+                        display: inline-block;
+                        font-size: 16px;
+                        margin: 4px 2px;
+                        cursor: pointer;
+                        border-radius: 8px;
+                        border: none;
+                    }}
+                </style>
+                <button
+                    class="styled-button"
+                    onclick="window.parent.postMessage({{
+                        streamlit: true,
+                        event: 'st_event',
+                        data: {{ url: '{row['url']}' }}
+                    }}, '*');
+                    window.open('{row['url']}', '_blank');"
+                >
+                    Buka Artikel & Catat Interaksi
+                </button>
+                """
 
                 st.markdown(f"**[{source_name}]** {row['title']}")
                 st.markdown(f"[{row['url']}]({row['url']})")
