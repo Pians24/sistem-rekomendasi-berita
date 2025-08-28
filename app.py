@@ -76,7 +76,7 @@ def preprocess_text(text):
 def extract_datetime_from_title(title, url=None):
     zona = pytz.timezone("Asia/Jakarta")
     now = datetime.now(zona)
-
+    
     # Pola untuk Detik: "Rabu, 27 Agu 2025 18:47 WIB"
     bulan_map_detik = {
         "Agu": "08", "Jan": "01", "Feb": "02", "Mar": "03", "Apr": "04", "Mei": "05",
@@ -151,35 +151,76 @@ def is_relevant(title, query, content="", threshold=0.5):
 # 4. Scraper per sumber (DIPERBAIKI)
 @st.cache_data(show_spinner="Mencari berita di Detik...")
 def scrape_detik(query, max_articles=15):
-    feed_url = "https://rss.detik.com/index.php/detikcom"
+    url = f"https://www.detik.com/search/searchall?query={query.replace(' ', '+')}"
     data = []
+    USER_AGENTS = [
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/108.0.0.0 Safari/537.36",
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/109.0.0.0 Safari/537.36",
+        "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/108.0.0.0 Safari/537.36"
+    ]
+    headers_main = {"User-Agent": random.choice(USER_AGENTS)}
 
     try:
-        feed = feedparser.parse(feed_url)
-        for entry in feed.entries:
-            title = entry.title
-            link = entry.link
-            summary = entry.summary
-            published = entry.published_parsed
-            published_dt = datetime(*published[:6])
-            
-            if query.lower() in title.lower() or is_relevant(title, query, summary):
-                data.append({
-                    "source": "Detik",
-                    "title": title,
-                    "description": summary,
-                    "content": f"{title} {summary}",
-                    "url": link,
-                    "publishedAt": published_dt.strftime("%Y-%m-%d %H:%M")
-                })
-    except Exception as e:
-        st.warning(f"Gagal scraping Detik via RSS: {e}. Mengembalikan DataFrame kosong.")
-    
-    return pd.DataFrame(data)
+        res = requests.get(url, headers=headers_main, timeout=10)
+        if res.status_code == 200:
+            soup = BeautifulSoup(res.content, "html.parser")
+            articles_raw = soup.select("article.list-content__item")
+            if not articles_raw:
+                st.warning("Scraper Detik tidak menemukan artikel di halaman pencarian.")
+                return pd.DataFrame()
+                
+            for article in articles_raw:
+                try:
+                    title_tag = article.find('h3', class_='media__title')
+                    link = title_tag.a['href'] if title_tag and title_tag.a else ''
+                    description_tag = article.find('div', class_='media__desc')
+
+                    if not title_tag or not link:
+                        continue
+
+                    title = title_tag.get_text(strip=True)
+                    description = description_tag.get_text(strip=True) if description_tag else ""
+                    published_at = ''
+
+                    if is_relevant(title, query, description):
+                        time.sleep(random.uniform(1, 2))
+                        headers_article = {"User-Agent": random.choice(USER_AGENTS)}
+                        art_res = requests.get(link, headers=headers_article, timeout=10)
+                        if art_res.status_code == 200:
+                            art_soup = BeautifulSoup(art_res.content, 'html.parser')
+                            date_tag = art_soup.find('div', class_='detail__date')
+                            if date_tag:
+                                date_text = date_tag.get_text(strip=True)
+                                published_at = extract_datetime_from_title(date_text, link)
+
+                        if not published_at:
+                            jakarta_tz = pytz.timezone("Asia/Jakarta")
+                            published_at = datetime.now(jakarta_tz).strftime("%Y-%m-%d %H:%M")
+
+                        data.append({
+                            "source": get_source_from_url(link),
+                            "title": title,
+                            "description": description,
+                            "content": f"{title} {description}",
+                            "url": link,
+                            "publishedAt": published_at
+                        })
+                except Exception as e:
+                    continue
+                if len(data) >= max_articles:
+                    break
+            return pd.DataFrame(data)
+        else:
+            st.warning(f"Gagal scraping Detik: Status code {res.status_code}. Mengembalikan DataFrame kosong.")
+    except (requests.exceptions.RequestException, Exception) as e:
+        st.warning(f"Gagal scraping Detik: {e}. Mengembalikan DataFrame kosong.")
+        time.sleep(random.uniform(1, 3))
+    return pd.DataFrame()
 
 @st.cache_data(show_spinner="Mencari berita di CNN...")
 def scrape_cnn_fixed(query, max_results=10):
-    feed_urls = [
+    urls_to_scrape = [
+        f"https://www.cnnindonesia.com/search?query={query.replace(' ', '+')}",
         "https://www.cnnindonesia.com/nasional/rss",
         "https://www.cnnindonesia.com/internasional/rss",
         "https://www.cnnindonesia.com/ekonomi/rss",
@@ -188,32 +229,85 @@ def scrape_cnn_fixed(query, max_results=10):
     ]
     results = []
 
-    for feed_url in feed_urls:
+    USER_AGENTS = [
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/108.0.0.0 Safari/537.36",
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/109.0.0.0 Safari/537.36",
+        "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/108.0.0.0 Safari/537.36"
+    ]
+    headers_main = {"User-Agent": random.choice(USER_AGENTS)}
+
+    for url in urls_to_scrape:
         if len(results) >= max_results:
             break
         
         try:
-            feed = feedparser.parse(feed_url)
-            for entry in feed.entries:
-                title = entry.title
-                link = entry.link
-                summary = entry.summary
-                published = entry.published_parsed
-                published_dt = datetime(*published[:6])
+            if "rss" in url:
+                feed = feedparser.parse(url)
+                for entry in feed.entries:
+                    title = entry.title
+                    link = entry.link
+                    summary = entry.summary
+                    published = entry.published_parsed
+                    published_dt = datetime(*published[:6])
 
-                if query.lower() in title.lower() or is_relevant(title, query, summary):
-                    results.append({
-                        "source": "CNN",
-                        "title": title,
-                        "description": summary,
-                        "content": f"{title} {summary}",
-                        "url": link,
-                        "publishedAt": published_dt.strftime("%Y-%m-%d %H:%M")
-                    })
-                if len(results) >= max_results:
-                    break
-        except Exception as e:
-            st.warning(f"Gagal scraping dari {feed_url}: {e}")
+                    if query.lower() in title.lower() or is_relevant(title, query, summary):
+                        results.append({
+                            "source": "CNN",
+                            "title": title,
+                            "description": summary,
+                            "content": f"{title} {summary}",
+                            "url": link,
+                            "publishedAt": published_dt.strftime("%Y-%m-%d %H:%M")
+                        })
+                    if len(results) >= max_results:
+                        break
+            else:
+                res = requests.get(url, headers=headers_main, timeout=10)
+                if res.status_code == 200:
+                    soup = BeautifulSoup(res.content, 'html.parser')
+                    articles_raw = soup.find_all('article', class_='box--card')
+                    
+                    for article in articles_raw:
+                        try:
+                            link_tag = article.find('a', class_='box--card__link')
+                            if not link_tag:
+                                continue
+                            
+                            link = link_tag['href']
+                            title = link_tag.find('span', class_='box--card__title').get_text(strip=True) if link_tag.find('span', class_='box--card__title') else ""
+                            summary = article.find('span', class_='box--card__desc').get_text(strip=True) if article.find('span', class_='box--card__desc') else ""
+                            
+                            if is_relevant(title, query, summary):
+                                time.sleep(random.uniform(1, 2))
+                                headers_article = {"User-Agent": random.choice(USER_AGENTS)}
+                                art_res = requests.get(link, headers=headers_article, timeout=10)
+                                published_at = ''
+                                if art_res.status_code == 200:
+                                    art_soup = BeautifulSoup(art_res.content, 'html.parser')
+                                    date_tag = art_soup.find('div', class_='detail__date')
+                                    if date_tag:
+                                        date_text = date_tag.get_text(strip=True)
+                                        published_at = extract_datetime_from_title(date_text, link)
+                                
+                                if not published_at:
+                                    jakarta_tz = pytz.timezone("Asia/Jakarta")
+                                    published_at = datetime.now(jakarta_tz).strftime("%Y-%m-%d %H:%M")
+                                
+                                results.append({
+                                    "source": get_source_from_url(link),
+                                    "title": title,
+                                    "description": summary,
+                                    "content": f"{title} {summary}",
+                                    "url": link,
+                                    "publishedAt": published_at
+                                })
+                            if len(results) >= max_results:
+                                break
+                        except Exception as e:
+                            continue
+
+        except (requests.exceptions.RequestException, Exception) as e:
+            st.warning(f"Gagal scraping dari {url}: {e}")
     
     return pd.DataFrame(results)
 
