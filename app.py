@@ -660,7 +660,6 @@ def main():
                         
                         display_time = row.get('publishedAt', 'Tidak Diketahui')
                         try:
-                            # Mengubah logika untuk menampilkan hanya tanggal jika waktu 00:00
                             dt_obj = datetime.strptime(display_time, "%Y-%m-%d %H:%M")
                             if dt_obj.strftime("%H:%M") == "00:00":
                                 formatted_time = dt_obj.strftime("%d %B %Y")
