@@ -140,7 +140,7 @@ def extract_datetime_from_title(title):
     return None
 
 @st.cache_data
-def is_relevant(title, query, content="", threshold=0.5): # PERBAIKAN: threshold dinaikkan ke 0.5
+def is_relevant(title, query, content="", threshold=0.5):
     combined = f"{title} {content}"
     combined_vecs = model_sbert.encode([combined])
     query_vecs = model_sbert.encode([query])
