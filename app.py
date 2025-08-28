@@ -475,12 +475,13 @@ def get_recent_queries_by_days(user_id, df, days=3):
     if recent_df.empty:
         return {}
     
-    recent_df.loc[:, 'date'] = recent_df['timestamp'].dt.strftime('%Y-%m-%d')
+    # Perbaikan di baris ini untuk format yang lebih lengkap
+    recent_df.loc[:, 'date'] = recent_df['timestamp'].dt.strftime('%d %B %Y')
     grouped_queries = recent_df.groupby('date')['query'].unique().to_dict()
 
     sorted_dates = sorted(
         grouped_queries.keys(),
-        key=lambda d: datetime.strptime(d, '%Y-%m-%d'),
+        key=lambda d: datetime.strptime(d, '%d %B %Y'),
         reverse=True
     )
     ordered_grouped_queries = {date: grouped_queries[date] for date in sorted_dates}
