@@ -510,7 +510,7 @@ def train_model(df_train):
     st.sidebar.write(f"- Skor F1: {f1_score(y_test, y_pred):.2f}")
     return clf
 
-def recommend(df, query, clf, n_per_source=3, min_score=0.5): # PERBAIKAN: Mengembalikan min_score ke 0.5
+def recommend(df, query, clf, n_per_source=3, min_score=0.5):
     if df.empty:
         return pd.DataFrame()
     df = df.copy()
@@ -650,7 +650,7 @@ def main():
         if df_news.empty:
             st.info("❗ Tidak ditemukan berita.")
         else:
-            results = recommend(df_news, q, clf, n_per_source=1, min_score=0.5) # PERBAIKAN: Mengembalikan min_score ke 0.5
+            results = recommend(df_news, q, clf, n_per_source=1, min_score=0.5)
             if results.empty:
                 st.info("❗ Tidak ada hasil relevan.")
             else:
@@ -679,7 +679,7 @@ def main():
 
             with st.spinner('Mengambil berita dan merekomendasikan...'):
                 st.session_state.current_search_results = scrape_all_sources(search_query)
-                results = recommend(st.session_state.current_search_results, search_query, clf, n_per_source=3, min_score=0.5) # PERBAIKAN: Mengembalikan min_score ke 0.5
+                results = recommend(st.session_state.current_search_results, search_query, clf, n_per_source=3, min_score=0.5)
                 st.session_state.current_recommended_results = results
             
             st.session_state.show_results = True
@@ -698,7 +698,6 @@ def main():
             for i, row in st.session_state.current_recommended_results.iterrows():
                 source_name = get_source_from_url(row['url'])
                 
-                # PERBAIKAN: Teks tombol sekarang berada di dalam tag <button>
                 button_html = f"""
                 <style>
                     .styled-button {{
