@@ -71,73 +71,135 @@ def preprocess_text(text):
     text = re.sub(r'\s+', ' ', text).strip()
     return text
 
-# 3. Ekstrak waktu (DIPERBAIKI)
+# === [WAKTU PUBLIKASI] Util konversi ke Asia/Jakarta ===
 @st.cache_data
-def extract_datetime_from_title(title, url=None):
-    zona = pytz.timezone("Asia/Jakarta")
-    now = datetime.now(zona)
+def _normalize_to_jakarta(dt_str: str) -> str:
+    """
+    Terima string waktu (ISO 8601 atau format umum), kembalikan 'YYYY-MM-DD HH:MM' zona Asia/Jakarta.
+    """
+    if not dt_str:
+        return ""
+    # 1) coba parse aware (UTC → Jakarta)
+    try:
+        ts = pd.to_datetime(dt_str, utc=True, errors="coerce")
+        if ts is not None and not pd.isna(ts):
+            ts = ts.tz_convert("Asia/Jakarta")
+            return ts.strftime("%Y-%m-%d %H:%M")
+    except Exception:
+        pass
+    # 2) kalau naive, anggap lokal Jakarta
+    try:
+        ts = pd.to_datetime(dt_str, errors="coerce")
+        if ts is not None and not pd.isna(ts):
+            ts = ts.tz_localize("Asia/Jakarta")
+            return ts.strftime("%Y-%m-%d %H:%M")
+    except Exception:
+        pass
+    return ""
 
-    # Pola untuk Detik: "Rabu, 27 Agu 2025 18:47 WIB"
-    bulan_map_detik = {
-        "Agu": "08", "Jan": "01", "Feb": "02", "Mar": "03", "Apr": "04", "Mei": "05",
-        "Jun": "06", "Jul": "07", "Sep": "09", "Okt": "10", "Nov": "11", "Des": "12"
+# === [WAKTU PUBLIKASI] Parser teks tanggal Indonesia (fallback) ===
+@st.cache_data
+def _parse_id_date_text(text: str) -> str:
+    """
+    Parse teks tanggal Indonesia seperti:
+    'Rabu, 27 Agu 2025 18:47 WIB' atau 'Rabu, 27/08/2025 18:47 WIB'
+    """
+    if not text:
+        return ""
+    text = text.strip()
+    bulan_map = {
+        "Jan": "01", "Feb": "02", "Mar": "03", "Apr": "04", "Mei": "05",
+        "Jun": "06", "Jul": "07", "Agu": "08", "Sep": "09", "Okt": "10",
+        "Nov": "11", "Des": "12"
     }
-    match_detik_date = re.search(r"(\w+, \d{1,2}) (\w+) (\d{4}) (\d{2}:\d{2})", title)
-    if match_detik_date:
-        day_str, day, month_str, year, time_str = match_detik_date.groups()
-        month_num = bulan_map_detik.get(month_str, "00")
-        if month_num != "00":
-            try:
-                dt_obj = datetime.strptime(f"{year}-{month_num}-{day} {time_str}", "%Y-%m-%d %H:%M")
-                return zona.localize(dt_obj).strftime("%Y-%m-%d %H:%M")
-            except ValueError:
-                pass
-
-    # Pola untuk CNN: "Rabu, 27/08/2025 18:47 WIB"
-    match_cnn_date = re.search(r"(\w+), (\d{2})/(\d{2})/(\d{4}) (\d{2}:\d{2})", title)
-    if match_cnn_date:
-        day_str, day, month, year, time_str = match_cnn_date.groups()
-        try:
-            dt_obj = datetime.strptime(f"{year}-{month}-{day} {time_str}", "%Y-%m-%d %H:%M")
-            return zona.localize(dt_obj).strftime("%Y-%m-%d %H:%M")
-        except ValueError:
-            pass
-
-    # Pola untuk Kompas di URL: /2025/08/25/11480341/
-    if url and "kompas.com" in url:
-        url_match = re.search(r"/(\d{4})/(\d{2})/(\d{2})/(\d{2})(\d{2})", url)
-        if url_match:
-            y, m, d, h, mi = url_match.groups()
-            try:
-                dt = datetime.strptime(f"{y}-{m}-{d} {h}:{mi}", "%Y-%m-%d %H:%M")
-                return zona.localize(dt).strftime("%Y-%m-%d %H:%M")
-            except:
-                pass
-
-    # Pola untuk format lain (sebagai fallback)
-    match_absolute = re.search(r"(\d{4}-\d{2}-\d{2}\s\d{2}:\d{2})", title)
-    if match_absolute:
-        try:
-            dt = datetime.strptime(match_absolute.group(1), "%Y-%m-%d %H:%M")
-            return zona.localize(dt).strftime("%Y-%m-%d %H:%M")
-        except:
-            pass
-            
-    # Pola untuk "X waktu yang lalu" (sebagai fallback terakhir)
-    match_relative = re.search(r"(\d+)\s+(menit|jam|hari|minggu)\s+yang lalu", title, re.IGNORECASE)
-    if match_relative:
-        jumlah, satuan = match_relative.groups()
-        jumlah = int(jumlah)
+    # Pola: 'Rabu, 27 Agu 2025 18:47 WIB'
+    m1 = re.search(
+        r"(Senin|Selasa|Rabu|Kamis|Jumat|Sabtu|Minggu),\s+(\d{1,2})\s+"
+        r"(Jan|Feb|Mar|Apr|Mei|Jun|Jul|Agu|Sep|Okt|Nov|Des)\s+(\d{4})\s+(\d{2}:\d{2})",
+        text, flags=re.IGNORECASE
+    )
+    if m1:
+        _, dd, mon, yyyy, hhmm = m1.groups()
+        mm = bulan_map.get(mon[:3].title(), "00")
+        if mm != "00":
+            return _normalize_to_jakarta(f"{yyyy}-{mm}-{int(dd):02d} {hhmm}")
+    # Pola: 'Rabu, 27/08/2025 18:47 WIB'
+    m2 = re.search(r"(Senin|Selasa|Rabu|Kamis|Jumat|Sabtu|Minggu),\s+(\d{2})/(\d{2})/(\d{4})\s+(\d{2}:\d{2})",
+                   text, flags=re.IGNORECASE)
+    if m2:
+        _, dd, mm, yyyy, hhmm = m2.groups()
+        return _normalize_to_jakarta(f"{yyyy}-{mm}-{dd} {hhmm}")
+    # Fallback ISO-like di teks
+    m3 = re.search(r"(\d{4}-\d{2}-\d{2}[ T]\d{2}:\d{2}(?::\d{2})?(?:Z|[+\-]\d{2}:\d{2})?)", text)
+    if m3:
+        return _normalize_to_jakarta(m3.group(1))
+    # Pola relatif "x ... yang lalu"
+    m4 = re.search(r"(\d+)\s+(menit|jam|hari|minggu)\s+yang\s+lalu", text, flags=re.IGNORECASE)
+    if m4:
+        jumlah = int(m4.group(1))
+        satuan = m4.group(2).lower()
+        zona = pytz.timezone("Asia/Jakarta")
+        now = datetime.now(zona)
         if "menit" in satuan:
             dt = now - timedelta(minutes=jumlah)
         elif "jam" in satuan:
             dt = now - timedelta(hours=jumlah)
         elif "hari" in satuan:
             dt = now - timedelta(days=jumlah)
-        elif "minggu" in satuan:
+        else:
             dt = now - timedelta(weeks=jumlah)
         return dt.strftime("%Y-%m-%d %H:%M")
+    return ""
 
+# === [WAKTU PUBLIKASI] Ekstrak dari HTML artikel (JSON-LD/meta/time/fallback teks) ===
+@st.cache_data
+def extract_published_at_from_article_html(art_soup: BeautifulSoup) -> str:
+    # 1) JSON-LD
+    try:
+        for s in art_soup.find_all("script", attrs={"type": "application/ld+json"}):
+            if not s.string:
+                continue
+            data = json.loads(s.string.strip())
+            candidates = data if isinstance(data, list) else [data]
+            for obj in candidates:
+                if isinstance(obj, dict):
+                    for key in ("datePublished", "dateCreated"):
+                        if key in obj and obj[key]:
+                            t = _normalize_to_jakarta(str(obj[key]))
+                            if t:
+                                return t
+                    mep = obj.get("mainEntityOfPage")
+                    if isinstance(mep, dict) and mep.get("datePublished"):
+                        t = _normalize_to_jakarta(str(mep["datePublished"]))
+                        if t:
+                            return t
+    except Exception:
+        pass
+    # 2) META TAGS
+    meta_keys = [
+        ("property", ["article:published_time", "og:published_time", "og:updated_time"]),
+        ("name", ["publishdate", "pubdate", "DC.date.issued", "date"])
+    ]
+    for attr, names in meta_keys:
+        for nm in names:
+            tag = art_soup.find("meta", attrs={attr: nm})
+            if tag and tag.get("content"):
+                t = _normalize_to_jakarta(tag["content"])
+                if t:
+                    return t
+    # 3) <time datetime="...">
+    ttag = art_soup.find("time", attrs={"datetime": True})
+    if ttag:
+        t = _normalize_to_jakarta(ttag["datetime"])
+        if t:
+            return t
+    # 4) Teks tanggal khas
+    for sel in ["div.detail__date", "div.date", "span.date", "div.read__time"]:
+        tag = art_soup.select_one(sel)
+        if tag:
+            t = _parse_id_date_text(tag.get_text(" ", strip=True))
+            if t:
+                return t
     return ""
 
 @st.cache_data
@@ -159,7 +221,6 @@ def scrape_detik(query, max_articles=15):
         "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/108.0.0.0 Safari/537.36"
     ]
     headers_main = {"User-Agent": random.choice(USER_AGENTS)}
-
     try:
         res = requests.get(url, headers=headers_main, timeout=10)
         if res.status_code == 200:
@@ -168,58 +229,36 @@ def scrape_detik(query, max_articles=15):
             if not articles_raw:
                 st.warning("Scraper Detik tidak menemukan artikel di halaman pencarian.")
                 return pd.DataFrame()
-                
             for article in articles_raw:
                 try:
                     title_tag = article.find('h3', class_='media__title')
                     link = title_tag.a['href'] if title_tag and title_tag.a else ''
                     description_tag = article.find('div', class_='media__desc')
-
                     if not title_tag or not link:
                         continue
-
                     title = title_tag.get_text(strip=True)
                     description = description_tag.get_text(strip=True) if description_tag else ""
                     published_at = ''
-
                     if is_relevant(title, query, description):
                         time.sleep(random.uniform(1, 2))
                         headers_article = {"User-Agent": random.choice(USER_AGENTS)}
                         art_res = requests.get(link, headers=headers_article, timeout=10)
                         if art_res.status_code == 200:
                             art_soup = BeautifulSoup(art_res.content, 'html.parser')
-                            
-                            # Mengambil dari JSON-LD atau meta tags sebagai prioritas
-                            try:
-                                json_ld_data = art_soup.find('script', type='application/ld+json')
-                                if json_ld_data:
-                                    data_json = json.loads(json_ld_data.string)
-                                    published_at = data_json.get('datePublished', '')
-                                    if published_at:
-                                        dt_obj = datetime.fromisoformat(published_at)
-                                        published_at = dt_obj.strftime("%Y-%m-%d %H:%M")
-                            except (AttributeError, json.JSONDecodeError):
-                                pass
-
-                            if not published_at:
-                                date_tag = art_soup.find('div', class_='detail__date')
-                                if date_tag:
-                                    date_text = date_tag.get_text(strip=True)
-                                    published_at = extract_datetime_from_title(date_text, link)
-
-                        if not published_at:
-                            jakarta_tz = pytz.timezone("Asia/Jakarta")
-                            published_at = datetime.now(jakarta_tz).strftime("%Y-%m-%d %H:%M")
-
-                        data.append({
-                            "source": get_source_from_url(link),
-                            "title": title,
-                            "description": description,
-                            "content": f"{title} {description}",
-                            "url": link,
-                            "publishedAt": published_at
-                        })
-                except Exception as e:
+                            # === [WAKTU PUBLIKASI] Detik: JSON-LD/meta/fallback ===
+                            published_at = extract_published_at_from_article_html(art_soup)
+                    if not published_at:
+                        jakarta_tz = pytz.timezone("Asia/Jakarta")
+                        published_at = datetime.now(jakarta_tz).strftime("%Y-%m-%d %H:%M")
+                    data.append({
+                        "source": get_source_from_url(link),
+                        "title": title,
+                        "description": description,
+                        "content": f"{title} {description}",
+                        "url": link,
+                        "publishedAt": published_at
+                    })
+                except Exception:
                     continue
                 if len(data) >= max_articles:
                     break
@@ -248,21 +287,27 @@ def scrape_cnn_fixed(query, max_results=10):
         "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/108.0.0.0 Safari/537.36"
     ]
     headers_main = {"User-Agent": random.choice(USER_AGENTS)}
-
     for url in urls_to_scrape:
         if len(results) >= max_results:
             break
-        
         try:
+            # Cabang RSS
             if "rss" in url:
                 feed = feedparser.parse(url)
                 for entry in feed.entries:
                     title = entry.title
                     link = entry.link
                     summary = entry.summary
-                    published = entry.published_parsed
-                    published_dt = datetime(*published[:6])
-
+                    # published_parsed biasanya UTC → konversi ke Jakarta
+                    published_dt = None
+                    if getattr(entry, "published_parsed", None):
+                        tm = entry.published_parsed  # time.struct_time (UTC)
+                        try:
+                            utc_dt = datetime(*tm[:6], tzinfo=pytz.UTC)
+                            published_dt = utc_dt.astimezone(pytz.timezone("Asia/Jakarta"))
+                        except Exception:
+                            published_dt = None
+                    published_str = published_dt.strftime("%Y-%m-%d %H:%M") if published_dt else ""
                     if query.lower() in title.lower() or is_relevant(title, query, summary):
                         results.append({
                             "source": "CNN",
@@ -270,26 +315,26 @@ def scrape_cnn_fixed(query, max_results=10):
                             "description": summary,
                             "content": f"{title} {summary}",
                             "url": link,
-                            "publishedAt": published_dt.strftime("%Y-%m-%d %H:%M")
+                            "publishedAt": published_str if published_str else _normalize_to_jakarta("")
                         })
                     if len(results) >= max_results:
                         break
+            # Cabang HTML
             else:
                 res = requests.get(url, headers=headers_main, timeout=10)
                 if res.status_code == 200:
                     soup = BeautifulSoup(res.content, 'html.parser')
                     articles_raw = soup.find_all('article', class_='box--card')
-                    
                     for article in articles_raw:
                         try:
                             link_tag = article.find('a', class_='box--card__link')
                             if not link_tag:
                                 continue
-                            
                             link = link_tag['href']
-                            title = link_tag.find('span', class_='box--card__title').get_text(strip=True) if link_tag.find('span', class_='box--card__title') else ""
-                            summary = article.find('span', class_='box--card__desc').get_text(strip=True) if article.find('span', class_='box--card__desc') else ""
-                            
+                            ttl_el = link_tag.find('span', class_='box--card__title')
+                            title = ttl_el.get_text(strip=True) if ttl_el else ""
+                            sum_el = article.find('span', class_='box--card__desc')
+                            summary = sum_el.get_text(strip=True) if sum_el else ""
                             if is_relevant(title, query, summary):
                                 time.sleep(random.uniform(1, 2))
                                 headers_article = {"User-Agent": random.choice(USER_AGENTS)}
@@ -297,15 +342,11 @@ def scrape_cnn_fixed(query, max_results=10):
                                 published_at = ''
                                 if art_res.status_code == 200:
                                     art_soup = BeautifulSoup(art_res.content, 'html.parser')
-                                    date_tag = art_soup.find('div', class_='detail__date')
-                                    if date_tag:
-                                        date_text = date_tag.get_text(strip=True)
-                                        published_at = extract_datetime_from_title(date_text, link)
-                                
+                                    # === [WAKTU PUBLIKASI] CNN: JSON-LD/meta/fallback ===
+                                    published_at = extract_published_at_from_article_html(art_soup)
                                 if not published_at:
                                     jakarta_tz = pytz.timezone("Asia/Jakarta")
                                     published_at = datetime.now(jakarta_tz).strftime("%Y-%m-%d %H:%M")
-                                
                                 results.append({
                                     "source": get_source_from_url(link),
                                     "title": title,
@@ -316,12 +357,10 @@ def scrape_cnn_fixed(query, max_results=10):
                                 })
                             if len(results) >= max_results:
                                 break
-                        except Exception as e:
+                        except Exception:
                             continue
-
         except (requests.exceptions.RequestException, Exception) as e:
             st.warning(f"Gagal scraping dari {url}: {e}")
-    
     return pd.DataFrame(results)
 
 @st.cache_data(show_spinner="Mencari berita di Kompas...")
@@ -334,46 +373,36 @@ def scrape_kompas_fixed(query, max_articles=10):
         "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/108.0.0.0 Safari/537.36"
     ]
     headers_main = {"User-Agent": random.choice(USER_AGENTS)}
-
     try:
         res = requests.get(search_url, headers=headers_main, timeout=10)
         if res.status_code == 200:
             soup = BeautifulSoup(res.text, "html.parser")
             articles_raw = soup.select("div.articleItem")[:max_articles]
-            
             if not articles_raw:
                 st.warning("Scraper Kompas tidak menemukan artikel di halaman pencarian.")
                 return pd.DataFrame()
-
             for item in articles_raw:
                 try:
                     a_tag = item.select_one("a.article-link")
                     title_tag = item.select_one("h2.articleTitle")
-
                     if not a_tag or not title_tag:
                         continue
-
                     url = a_tag["href"]
                     title = title_tag.get_text(strip=True)
-
                     time.sleep(random.uniform(2, 5))
                     headers_article = {"User-Agent": random.choice(USER_AGENTS)}
                     art_res = requests.get(url, headers=headers_article, timeout=15)
-                    
                     if art_res.status_code != 200:
                         continue
-
                     art_soup = BeautifulSoup(art_res.text, "html.parser")
                     content_paras = art_soup.select("div.read__content > p")
                     content = " ".join([p.get_text(strip=True) for p in content_paras])
-
+                    # Kompas kamu sudah bagus, tetap gunakan text time
                     time_tag = art_soup.select_one("div.read__time")
-                    published = extract_datetime_from_title(time_tag.get_text(strip=True) if time_tag else "", url)
-
+                    published = _parse_id_date_text(time_tag.get_text(strip=True) if time_tag else "")
                     if not published:
                         jakarta_tz = pytz.timezone("Asia/Jakarta")
                         published = datetime.now(jakarta_tz).strftime("%Y-%m-%d %H:%M")
-
                     if is_relevant(title, query, content):
                         data.append({
                             "source": get_source_from_url(url),
@@ -383,7 +412,7 @@ def scrape_kompas_fixed(query, max_articles=10):
                             "url": url,
                             "publishedAt": published
                         })
-                except Exception as e:
+                except Exception:
                     continue
                 if len(data) >= max_articles:
                     break
@@ -397,19 +426,15 @@ def scrape_kompas_fixed(query, max_articles=10):
 @st.cache_data(show_spinner="Menggabungkan hasil...")
 def scrape_all_sources(query):
     dfs = []
-    
     df_detik = scrape_detik(query)
     if not df_detik.empty:
         dfs.append(df_detik)
-
     df_cnn = scrape_cnn_fixed(query)
     if not df_cnn.empty:
         dfs.append(df_cnn)
-
     df_kompas = scrape_kompas_fixed(query)
     if not df_kompas.empty:
         dfs.append(df_kompas)
-
     if dfs:
         df = pd.concat(dfs, ignore_index=True)
         return df
@@ -450,10 +475,8 @@ def save_interaction_to_github(user_id, query, all_articles, clicked_urls):
         history_list = json.loads(history_str)
     except Exception:
         history_list = []
-
     tz = pytz.timezone("Asia/Jakarta")
     now = datetime.now(tz).strftime("%A, %d %B %Y %H:%M")
-
     for _, row in all_articles.iterrows():
         article_log = {
             "user_id": user_id,
@@ -467,7 +490,6 @@ def save_interaction_to_github(user_id, query, all_articles, clicked_urls):
             "label": 1 if row.get('url', '') in clicked_urls else 0
         }
         history_list.append(article_log)
-
     updated_content = json.dumps(history_list, indent=2, ensure_ascii=False)
     repo.update_file(
         st.secrets["file_path"],
@@ -479,15 +501,11 @@ def save_interaction_to_github(user_id, query, all_articles, clicked_urls):
 def get_recent_queries_by_days(user_id, df, days=3):
     if df.empty or "user_id" not in df.columns or 'click_time' not in df.columns:
         return {}
-
     df_user = df[df["user_id"] == user_id].copy()
     jakarta_tz = pytz.timezone("Asia/Jakarta")
-
     if 'publishedAt' not in df_user.columns:
         df_user['publishedAt'] = df_user['click_time']
-    
     df_user['date_to_process'] = df_user['click_time']
-
     df_user["timestamp"] = pd.to_datetime(
         df_user["date_to_process"],
         format="%A, %d %B %Y %H:%M",
@@ -501,26 +519,20 @@ def get_recent_queries_by_days(user_id, df, days=3):
         ), inplace=True
     )
     df_user = df_user.dropna(subset=['timestamp']).copy()
-
     try:
         df_user['timestamp'] = pd.to_datetime(df_user['timestamp']).dt.tz_localize(jakarta_tz, ambiguous='NaT', nonexistent='NaT')
     except Exception:
         return {}
-
     df_user = df_user.dropna(subset=['timestamp']).copy()
     if df_user.empty:
         return {}
-
     now = datetime.now(jakarta_tz)
     cutoff_time = now - timedelta(days=days)
     recent_df = df_user[df_user["timestamp"] >= cutoff_time].copy()
-
     if recent_df.empty:
         return {}
-    
     recent_df.loc[:, 'date'] = recent_df['timestamp'].dt.strftime('%d %B %Y')
     grouped_queries = recent_df.groupby('date')['query'].unique().to_dict()
-
     sorted_dates = sorted(
         grouped_queries.keys(),
         key=lambda d: datetime.strptime(d, '%d %B %Y'),
@@ -534,12 +546,9 @@ def get_most_frequent_topics(user_id, df, days=3):
         return []
     df_user = df[df["user_id"] == user_id].copy()
     jakarta_tz = pytz.timezone("Asia/Jakarta")
-
     if 'publishedAt' not in df_user.columns:
         df_user['publishedAt'] = df_user['click_time']
-
     df_user['date_to_process'] = df_user['publishedAt']
-
     df_user["timestamp"] = pd.to_datetime(
         df_user["date_to_process"],
         format="%Y-%m-%d %H:%M",
@@ -553,15 +562,11 @@ def get_most_frequent_topics(user_id, df, days=3):
         ), inplace=True
     )
     df_user = df_user.dropna(subset=['timestamp'])
-
     now = datetime.now(jakarta_tz)
     cutoff_time = now - timedelta(days=days)
-
     recent_df = df_user[df_user["timestamp"] >= cutoff_time]
-
     if recent_df.empty:
         return []
-
     query_counts = Counter(recent_df['query'])
     sorted_queries = sorted(query_counts.items(), key=lambda item: item[1], reverse=True)
     return sorted_queries
@@ -571,7 +576,6 @@ def build_training_data(user_id):
     user_data = [h for h in history_df.to_dict('records')
                  if h.get("user_id") == user_id and "label" in h and h.get("title") and h.get("content")]
     df = pd.DataFrame(user_data)
-    
     if df.empty or df["label"].nunique() < 2:
         return pd.DataFrame()
     train = []
@@ -609,27 +613,21 @@ def recommend(df, query, clf, n_per_source=3, min_score=0.5):
         return pd.DataFrame()
     df = df.copy()
     df.drop_duplicates(subset=['url'], inplace=True)
-
     df["processed"] = df.apply(lambda row: preprocess_text(row['title'] + ' ' + row.get('content', '')), axis=1)
     vec = model_sbert.encode(df["processed"].tolist())
-
     df['publishedAt_dt'] = pd.to_datetime(df['publishedAt'], errors='coerce')
     df['vec_temp'] = list(vec)
     df = df.dropna(subset=['publishedAt_dt'])
     vec = df['vec_temp'].tolist()
     df = df.drop(columns=['vec_temp'])
-
     if df.empty:
         return pd.DataFrame()
-
     if clf:
         scores = clf.predict_proba(vec)[:, 1]
         df["score"] = scores
         df["bonus"] = df["title"].apply(lambda x: 0.1 if query.lower() in x.lower() else 0)
         df["final_score"] = (df["score"] + df["bonus"]).clip(0, 1)
-
         df = df[df['final_score'] >= min_score].copy()
-
         def top_n(x):
             return x.sort_values(by=['publishedAt_dt', 'final_score'], ascending=[False, False]).head(n_per_source)
         top_n_per_source = df.groupby("source", group_keys=False).apply(top_n, include_groups=False)
@@ -638,9 +636,7 @@ def recommend(df, query, clf, n_per_source=3, min_score=0.5):
         q_vec = model_sbert.encode([preprocess_text(query)])
         sims = cosine_similarity(q_vec, vec)[0]
         df["similarity"] = sims
-
         df = df[df['similarity'] >= min_score].copy()
-
         def top_n_sim(x):
             return x.sort_values(by=['publishedAt_dt', 'similarity'], ascending=[False, False]).head(n_per_source)
         top_n_per_source = df.groupby("source", group_keys=False).apply(top_n_sim, include_groups=False)
@@ -664,7 +660,7 @@ def main():
 
     if st.session_state.history.empty:
         st.session_state.history = load_history_from_github()
-    
+
     st.sidebar.header("Model Personalisasi")
     df_train = build_training_data(USER_ID)
     clf = None
@@ -676,7 +672,6 @@ def main():
 
     st.header("📚 Pencarian Berita per Tanggal")
     grouped_queries = get_recent_queries_by_days(USER_ID, st.session_state.history, days=3)
-
     if grouped_queries:
         for date, queries in grouped_queries.items():
             st.subheader(f"Tanggal {date}")
@@ -684,30 +679,22 @@ def main():
             for q in unique_queries:
                 with st.expander(f"- {q}"):
                     df_filtered = st.session_state.history[(st.session_state.history['query'] == q) & (st.session_state.history['user_id'] == USER_ID)].copy()
-                    
                     if df_filtered.empty:
                         st.info("❗ Tidak ditemukan berita dalam riwayat untuk topik ini.")
                         continue
-                    
                     if 'publishedAt' not in df_filtered.columns:
                         df_filtered['publishedAt'] = df_filtered['click_time']
-
                     df_filtered['publishedAt_dt'] = pd.to_datetime(df_filtered['publishedAt'], errors='coerce')
                     df_filtered.dropna(subset=['publishedAt_dt'], inplace=True)
-                    
                     if df_filtered.empty:
                         st.info("❗ Setelah pembersihan data, tidak ada entri yang valid.")
                         continue
-
                     df_filtered['processed'] = df_filtered.apply(lambda row: preprocess_text(row['title'] + ' ' + str(row.get('content', ''))), axis=1)
-                    
                     q_vec = model_sbert.encode([preprocess_text(q)])
                     df_filtered['similarity'] = df_filtered['processed'].apply(lambda x: cosine_similarity([model_sbert.encode(x)], q_vec)[0][0])
-                    
                     if clf:
                         if 'final_score' not in df_filtered.columns:
                             df_filtered['final_score'] = clf.predict_proba(model_sbert.encode(df_filtered['processed'].tolist()))[:, 1]
-                        
                         def top_n_history(x):
                             return x.sort_values(by=['publishedAt_dt', 'final_score'], ascending=[False, False]).head(3)
                         articles_to_show = df_filtered.groupby("source", group_keys=False).apply(top_n_history, include_groups=False)
@@ -719,24 +706,17 @@ def main():
                         articles_to_show = df_filtered.groupby("source", group_keys=False).apply(top_n_history, include_groups=False)
                         articles_to_show = articles_to_show.sort_values(by=['publishedAt_dt', 'similarity'], ascending=[False, False]).reset_index(drop=True)
                         skor_key = 'similarity'
-
                     if articles_to_show.empty:
-                            st.info("❗ Tidak ada hasil relevan yang ditemukan dalam riwayat untuk topik ini.")
-                            continue
-                    
-                    for i, row in articles_to_show.iterrows():
+                        st.info("❗ Tidak ada hasil relevan yang ditemukan dalam riwayat untuk topik ini.")
+                        continue
+                    for _, row in articles_to_show.iterrows():
                         source_name = get_source_from_url(row['url'])
-                        
                         display_time = row.get('publishedAt', 'Tidak Diketahui')
                         try:
                             dt_obj = datetime.strptime(display_time, "%Y-%m-%d %H:%M")
-                            if dt_obj.strftime("%H:%M") == "00:00":
-                                formatted_time = dt_obj.strftime("%Y-%m-%d")
-                            else:
-                                formatted_time = dt_obj.strftime("%Y-%m-%d %H:%M")
+                            formatted_time = dt_obj.strftime("%Y-%m-%d %H:%M") if dt_obj.strftime("%H:%M") != "00:00" else dt_obj.strftime("%Y-%m-%d")
                         except (ValueError, TypeError):
                             formatted_time = display_time
-
                         st.markdown(f"**[{source_name}]** {row['title']}")
                         st.markdown(f"[{row['url']}]({row['url']})")
                         st.write(f"Waktu Publikasi: *{formatted_time}*")
@@ -761,25 +741,19 @@ def main():
             if results.empty:
                 st.info("❗ Tidak ada hasil relevan.")
             else:
-                for i, row in results.iterrows():
+                for _, row in results.iterrows():
                     source_name = get_source_from_url(row['url'])
                     st.markdown(f"**[{source_name}]** {row['title']}")
                     st.markdown(row['url'])
-                    
                     display_time = row.get('publishedAt', 'Tidak Diketahui')
                     try:
                         dt_obj = datetime.strptime(display_time, "%Y-%m-%d %H:%M")
-                        if dt_obj.strftime("%H:%M") == "00:00":
-                            formatted_time = dt_obj.strftime("%Y-%m-%d")
-                        else:
-                            formatted_time = dt_obj.strftime("%Y-%m-%d %H:%M")
+                        formatted_time = dt_obj.strftime("%Y-%m-%d %H:%M") if dt_obj.strftime("%H:%M") != "00:00" else dt_obj.strftime("%Y-%m-%d")
                     except (ValueError, TypeError):
                         formatted_time = display_time
-
                     st.write(f"Waktu: *{formatted_time}*")
                     skor_key = 'final_score' if 'final_score' in row else 'similarity'
                     st.write(f"Skor: `{row[skor_key]:.2f}`")
-
                     st.markdown("---")
     else:
         st.info("🔥 Tidak ada topik yang sering dicari dalam 3 hari terakhir.")
@@ -788,19 +762,16 @@ def main():
 
     st.header("🔍 Pencarian Berita")
     search_query = st.text_input("Ketik topik berita yang ingin Anda cari:", key="search_input")
-
     if st.button("Cari Berita"):
         if search_query:
             if 'current_query' in st.session_state and st.session_state.current_query:
                 save_interaction_to_github(USER_ID, st.session_state.current_query, st.session_state.current_recommended_results, st.session_state.clicked_urls_in_session)
                 st.cache_data.clear()
                 st.session_state.history = load_history_from_github()
-
             with st.spinner('Mengambil berita dan merekomendasikan...'):
                 st.session_state.current_search_results = scrape_all_sources(search_query)
                 results = recommend(st.session_state.current_search_results, search_query, clf, n_per_source=3, min_score=0.5)
                 st.session_state.current_recommended_results = results
-            
             st.session_state.show_results = True
             st.session_state.current_query = search_query
             st.session_state.clicked_urls_in_session = []
@@ -810,36 +781,25 @@ def main():
 
     if st.session_state.show_results:
         st.subheader(f"📌 Hasil untuk '{st.session_state.current_query}'")
-        
         if st.session_state.current_recommended_results.empty:
             st.warning("❗ Tidak ada hasil yang relevan. Coba kata kunci lain.")
         else:
-            for i, row in st.session_state.current_recommended_results.iterrows():
+            for _, row in st.session_state.current_recommended_results.iterrows():
                 source_name = get_source_from_url(row['url'])
-                
                 button_html = f"""<style>.styled-button {{ background-color: #007bff; color: white; padding: 10px 20px; text-align: center; text-decoration: none; display: inline-block; font-size: 16px; margin: 4px 2px; cursor: pointer; border-radius: 8px; border: none; }}</style><button class="styled-button" onclick="window.parent.postMessage({{ streamlit: true, event: 'st_event', data: {{ url: '{row['url']}' }} }}, '*'); window.open('{row['url']}', '_blank');">Buka Artikel & Catat Interaksi</button>"""
-
                 st.markdown(f"**[{source_name}]** {row['title']}")
                 st.markdown(f"[{row['url']}]({row['url']})")
-                
                 display_time = row.get('publishedAt', 'Tidak Diketahui')
                 try:
                     dt_obj = datetime.strptime(display_time, "%Y-%m-%d %H:%M")
-                    if dt_obj.strftime("%H:%M") == "00:00":
-                        formatted_time = dt_obj.strftime("%Y-%m-%d")
-                    else:
-                        formatted_time = dt_obj.strftime("%Y-%m-%d %H:%M")
+                    formatted_time = dt_obj.strftime("%Y-%m-%d %H:%M") if dt_obj.strftime("%H:%M") != "00:00" else dt_obj.strftime("%Y-%m-%d")
                 except (ValueError, TypeError):
                     formatted_time = display_time
-
                 st.write(f"Waktu: *{formatted_time}*")
                 skor_key = 'final_score' if 'final_score' in row else 'similarity'
                 st.write(f"Skor: `{row[skor_key]:.2f}`")
-
                 st.markdown(button_html, unsafe_allow_html=True)
-
                 st.markdown("---")
-            
         if st.session_state.current_query:
             st.info(f"Anda telah mencatat {len(st.session_state.clicked_urls_in_session)} artikel. Data akan disimpan saat Anda memulai pencarian baru.")
 
