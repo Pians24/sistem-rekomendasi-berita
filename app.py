@@ -102,9 +102,30 @@ def extract_datetime_from_title(title, url=None):
             return zona.localize(dt).strftime("%Y-%m-%d %H:%M")
         except:
             pass
-
-    # Pola untuk format tanggal di URL, sebagai fallback
+            
+    # Pola untuk Detik dan CNN: dari URL yang mengandung tanggal dan waktu
     if url:
+        # Pola untuk Detik: .../20250820-250820126/...
+        detik_url_match = re.search(r"/(\d{4})(\d{2})(\d{2})-.*?(\d{2})(\d{2})(\d{2})/", url)
+        if detik_url_match:
+            y, m, d, h, minute, s = detik_url_match.groups()
+            try:
+                dt = datetime(int(y), int(m), int(d), int(h), int(minute), int(s))
+                return zona.localize(dt).strftime("%Y-%m-%d %H:%M")
+            except:
+                pass
+        
+        # Pola untuk CNN: .../20250820212238/...
+        cnn_url_match = re.search(r"/(\d{4})(\d{2})(\d{2})(\d{2})(\d{2})(\d{2})/", url)
+        if cnn_url_match:
+            y, m, d, h, minute, s = cnn_url_match.groups()
+            try:
+                dt = datetime(int(y), int(m), int(d), int(h), int(minute), int(s))
+                return zona.localize(dt).strftime("%Y-%m-%d %H:%M")
+            except:
+                pass
+                
+        # Pola untuk format tanggal di URL, sebagai fallback
         url_match = re.search(r"/(\d{4})/(\d{2})/(\d{2})/", url)
         if url_match:
             y, m, d = url_match.groups()
@@ -393,8 +414,6 @@ def get_recent_queries_by_days(user_id, df, days=3):
     df_user = df[df["user_id"] == user_id].copy()
     jakarta_tz = pytz.timezone("Asia/Jakarta")
     
-    # --- PERBAIKAN DI SINI ---
-    # Pastikan kolom 'publishedAt' ada, jika tidak, buat dengan nilai dari 'click_time'
     if 'publishedAt' not in df_user.columns:
         df_user['publishedAt'] = df_user['click_time']
 
@@ -447,8 +466,6 @@ def get_most_frequent_topics(user_id, df, days=3):
     df_user = df[df["user_id"] == user_id].copy()
     jakarta_tz = pytz.timezone("Asia/Jakarta")
     
-    # --- PERBAIKAN DI SINI ---
-    # Pastikan kolom 'publishedAt' ada, jika tidak, buat dengan nilai dari 'click_time'
     if 'publishedAt' not in df_user.columns:
         df_user['publishedAt'] = df_user['click_time']
 
@@ -603,11 +620,9 @@ def main():
                         st.info("❗ Tidak ditemukan berita dalam riwayat untuk topik ini.")
                         continue
                     
-                    # --- PERBAIKAN UNTUK MENGATASI KEYERROR ---
-                    # Periksa apakah kolom 'publishedAt' ada, jika tidak, buat dengan nilai dari 'click_time'
                     if 'publishedAt' not in df_filtered.columns:
                         df_filtered['publishedAt'] = df_filtered['click_time']
-                    
+
                     df_filtered['publishedAt_dt'] = pd.to_datetime(df_filtered['publishedAt'], errors='coerce')
                     df_filtered.dropna(subset=['publishedAt_dt'], inplace=True)
                     
@@ -621,7 +636,8 @@ def main():
                     df_filtered['similarity'] = df_filtered['processed'].apply(lambda x: cosine_similarity([model_sbert.encode(x)], q_vec)[0][0])
                     
                     if clf:
-                        df_filtered['final_score'] = clf.predict_proba(model_sbert.encode(df_filtered['processed'].tolist()))[:, 1]
+                        if 'final_score' not in df_filtered.columns:
+                            df_filtered['final_score'] = clf.predict_proba(model_sbert.encode(df_filtered['processed'].tolist()))[:, 1]
                         
                         def top_n_history(x):
                             return x.sort_values(by=['publishedAt_dt', 'final_score'], ascending=[False, False]).head(3)
@@ -642,11 +658,11 @@ def main():
                     for i, row in articles_to_show.iterrows():
                         source_name = get_source_from_url(row['url'])
                         
-                        display_time = row['publishedAt']
+                        display_time = row.get('publishedAt', 'Tidak Diketahui')
                         try:
                             dt_obj = datetime.strptime(display_time, "%Y-%m-%d %H:%M")
                             formatted_time = dt_obj.strftime("%d %B %Y %H:%M")
-                        except ValueError:
+                        except (ValueError, TypeError):
                             formatted_time = display_time
 
                         st.markdown(f"**[{source_name}]** {row['title']}")
@@ -708,7 +724,7 @@ def main():
         else:
             st.warning("Mohon masukkan topik pencarian.")
 
-    if st.session_results:
+    if st.session_state.show_results:
         st.subheader(f"📌 Hasil untuk '{st.session_state.current_query}'")
         
         if st.session_state.current_recommended_results.empty:
