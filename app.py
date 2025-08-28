@@ -189,6 +189,7 @@ def scrape_detik(query, max_articles=15):
                         art_res = requests.get(link, headers=headers_article, timeout=10)
                         if art_res.status_code == 200:
                             art_soup = BeautifulSoup(art_res.content, 'html.parser')
+                            # Pola untuk Detik
                             date_tag = art_soup.select_one("div.detail__date")
                             if date_tag:
                                 date_text = date_tag.get_text(strip=True)
@@ -254,11 +255,12 @@ def scrape_cnn_fixed(query, max_results=10):
                         published_at = ''
                         if art_res.status_code == 200:
                             art_soup = BeautifulSoup(art_res.content, 'html.parser')
+                            # Pola untuk CNN
                             date_tag = art_soup.select_one("div.detail__date")
                             if date_tag:
                                 date_text = date_tag.get_text(strip=True)
                                 published_at = extract_datetime_from_title(date_text, link)
-
+                        
                         if not published_at:
                             jakarta_tz = pytz.timezone("Asia/Jakarta")
                             published_at = datetime.now(jakarta_tz).strftime("%Y-%m-%d %H:%M")
@@ -384,7 +386,15 @@ def load_history_from_github():
         contents = repo.get_contents(st.secrets["file_path"])
         file_content = contents.decoded_content.decode('utf-8')
         data = json.loads(file_content)
-        return pd.DataFrame(data) if isinstance(data, list) and data else pd.DataFrame()
+        # Tambahkan baris ini untuk memastikan DataFrame memiliki kolom-kolom yang diperlukan
+        if data:
+            df = pd.DataFrame(data)
+            required_cols = ['user_id', 'query', 'click_time', 'publishedAt']
+            for col in required_cols:
+                if col not in df.columns:
+                    df[col] = None
+            return df
+        return pd.DataFrame()
     except Exception as e:
         st.error(f"Gagal memuat riwayat dari GitHub: {e}")
         return pd.DataFrame()
@@ -425,47 +435,48 @@ def save_interaction_to_github(user_id, query, all_articles, clicked_urls):
     )
 
 def get_recent_queries_by_days(user_id, df, days=3):
-    if df.empty or "click_time" not in df.columns:
+    if df.empty or "user_id" not in df.columns:
         return {}
 
     df_user = df[df["user_id"] == user_id].copy()
     jakarta_tz = pytz.timezone("Asia/Jakarta")
-    
+
     if 'publishedAt' not in df_user.columns:
         df_user['publishedAt'] = df_user['click_time']
-
-    df_user['date_to_process'] = df_user['publishedAt']
     
+    # Gunakan 'click_time' untuk pengelompokan riwayat
+    df_user['date_to_process'] = df_user['click_time']
+
     df_user["timestamp"] = pd.to_datetime(
         df_user["date_to_process"],
-        format="%Y-%m-%d %H:%M",
+        format="%A, %d %B %Y %H:%M",
         errors='coerce'
     )
     df_user["timestamp"].fillna(
         pd.to_datetime(
             df_user["date_to_process"],
-            format="%A, %d %B %Y %H:%M",
+            format="%Y-%m-%d %H:%M",
             errors='coerce'
         ), inplace=True
     )
     df_user = df_user.dropna(subset=['timestamp']).copy()
-    
+
     try:
         df_user['timestamp'] = pd.to_datetime(df_user['timestamp']).dt.tz_localize(jakarta_tz, ambiguous='NaT', nonexistent='NaT')
     except Exception:
         return {}
-    
+
     df_user = df_user.dropna(subset=['timestamp']).copy()
     if df_user.empty:
         return {}
-    
+
     now = datetime.now(jakarta_tz)
     cutoff_time = now - timedelta(days=days)
     recent_df = df_user[df_user["timestamp"] >= cutoff_time].copy()
-    
+
     if recent_df.empty:
         return {}
-    
+
     recent_df.loc[:, 'date'] = recent_df['timestamp'].dt.strftime('%d %B %Y')
     grouped_queries = recent_df.groupby('date')['query'].unique().to_dict()
 
@@ -478,11 +489,11 @@ def get_recent_queries_by_days(user_id, df, days=3):
     return ordered_grouped_queries
 
 def get_most_frequent_topics(user_id, df, days=3):
-    if df.empty:
+    if df.empty or "user_id" not in df.columns:
         return []
     df_user = df[df["user_id"] == user_id].copy()
     jakarta_tz = pytz.timezone("Asia/Jakarta")
-    
+
     if 'publishedAt' not in df_user.columns:
         df_user['publishedAt'] = df_user['click_time']
 
@@ -504,9 +515,9 @@ def get_most_frequent_topics(user_id, df, days=3):
 
     now = datetime.now(jakarta_tz)
     cutoff_time = now - timedelta(days=days)
-    
+
     recent_df = df_user[df_user["timestamp"] >= cutoff_time]
-    
+
     if recent_df.empty:
         return []
 
@@ -575,7 +586,7 @@ def recommend(df, query, clf, n_per_source=3, min_score=0.5):
         df["score"] = scores
         df["bonus"] = df["title"].apply(lambda x: 0.1 if query.lower() in x.lower() else 0)
         df["final_score"] = (df["score"] + df["bonus"]).clip(0, 1)
-        
+
         df = df[df['final_score'] >= min_score].copy()
 
         def top_n(x):
@@ -586,7 +597,7 @@ def recommend(df, query, clf, n_per_source=3, min_score=0.5):
         q_vec = model_sbert.encode([preprocess_text(query)])
         sims = cosine_similarity(q_vec, vec)[0]
         df["similarity"] = sims
-        
+
         df = df[df['similarity'] >= min_score].copy()
 
         def top_n_sim(x):
