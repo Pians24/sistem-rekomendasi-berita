@@ -927,3 +927,69 @@ def main():
                 )
                 st.cache_data.clear()
                 st.session_state
+                st.session_state.history = load_history_from_github()
+            with st.spinner('Mengambil berita dan merekomendasikan...'):
+                st.session_state.current_search_results = scrape_all_sources(search_query)
+                results = recommend(
+                    st.session_state.current_search_results,
+                    search_query, clf, n_per_source=3, min_score=0.5, ensure_all_sources=True
+                )
+                st.session_state.current_recommended_results = results
+            st.session_state.show_results = True
+            st.session_state.current_query = search_query
+            st.session_state.clicked_urls_in_session = []
+            st.rerun()
+        else:
+            st.warning("Mohon masukkan topik pencarian.")
+
+    if st.session_state.show_results:
+        st.subheader(f"📌 Hasil untuk '{st.session_state.current_query}'")
+        if st.session_state.current_recommended_results.empty:
+            st.warning("❗ Tidak ada hasil yang relevan. Coba kata kunci lain.")
+        else:
+            for _, row in st.session_state.current_recommended_results.iterrows():
+                source_name = get_source_from_url(row['url'])
+                button_html = f"""
+<style>
+.styled-button {{
+  background-color: #007bff; color: white; padding: 10px 20px;
+  text-align: center; text-decoration: none; display: inline-block;
+  font-size: 16px; margin: 4px 2px; cursor: pointer; border-radius: 8px; border: none;
+}}
+</style>
+<button class="styled-button"
+  onclick="window.parent.postMessage({{ streamlit: true, event: 'st_event', data: {{ url: '{row['url']}' }} }}, '*');
+           window.open('{row['url']}', '_blank');">
+  Buka Artikel & Catat Interaksi
+</button>
+"""
+                st.markdown(f"**[{source_name}]** {row['title']}")
+                st.markdown(f"[{row['url']}]({row['url']})")
+                st.write(f"Waktu: *{format_display_time(row.get('publishedAt', 'Tidak Diketahui'))}*")
+                skor_key = 'final_score' if 'final_score' in row else 'similarity'
+                st.write(f"Skor: `{row[skor_key]:.2f}`")
+                st.markdown(button_html, unsafe_allow_html=True)
+                st.markdown("---")
+        if st.session_state.current_query:
+            st.info(f"Anda telah mencatat {len(st.session_state.clicked_urls_in_session)} artikel. Data akan disimpan saat Anda memulai pencarian baru.")
+
+def on_message(message):
+    if 'url' in message:
+        st.session_state.url_from_js = message['url']
+
+components.html("""
+<script>
+  window.addEventListener('message', event => {
+    if (event.data && event.data.streamlit && event.data.event === 'st_event') {
+      window.parent.postMessage(event.data, '*');
+    }
+  });
+</script>
+""", height=0, width=0)
+
+if st.session_state.url_from_js:
+    handle_js_click(st.session_state.url_from_js)
+    st.session_state.url_from_js = None
+
+if __name__ == "__main__":
+    main()
