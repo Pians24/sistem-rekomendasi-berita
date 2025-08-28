@@ -123,7 +123,7 @@ def extract_datetime_from_title(title, url=None):
         except:
             pass
             
-    return "" # Mengembalikan string kosong jika tidak ditemukan, untuk menghindari tanggal yang salah
+    return ""
 
 @st.cache_data
 def is_relevant(title, query, content="", threshold=0.5):
@@ -346,10 +346,6 @@ def load_history_from_github():
         contents = repo.get_contents(st.secrets["file_path"])
         file_content = contents.decoded_content.decode('utf-8')
         data = json.loads(file_content)
-        # Tambahkan pemrosesan di sini untuk memastikan semua entri memiliki publishedAt
-        for entry in data:
-            if 'publishedAt' not in entry or not entry['publishedAt']:
-                entry['publishedAt'] = entry.get('click_time', '')
         return pd.DataFrame(data) if isinstance(data, list) and data else pd.DataFrame()
     except Exception as e:
         st.error(f"Gagal memuat riwayat dari GitHub: {e}")
@@ -397,12 +393,13 @@ def get_recent_queries_by_days(user_id, df, days=3):
     df_user = df[df["user_id"] == user_id].copy()
     jakarta_tz = pytz.timezone("Asia/Jakarta")
     
-    # Gunakan 'publishedAt' untuk mengelompokkan riwayat
-    df_user['date_to_process'] = df_user.apply(
-        lambda row: row['publishedAt'] if 'publishedAt' in row and row['publishedAt'] else row['click_time'],
-        axis=1
-    )
+    # --- PERBAIKAN DI SINI ---
+    # Pastikan kolom 'publishedAt' ada, jika tidak, buat dengan nilai dari 'click_time'
+    if 'publishedAt' not in df_user.columns:
+        df_user['publishedAt'] = df_user['click_time']
 
+    df_user['date_to_process'] = df_user['publishedAt']
+    
     df_user["timestamp"] = pd.to_datetime(
         df_user["date_to_process"],
         format="%Y-%m-%d %H:%M",
@@ -450,10 +447,12 @@ def get_most_frequent_topics(user_id, df, days=3):
     df_user = df[df["user_id"] == user_id].copy()
     jakarta_tz = pytz.timezone("Asia/Jakarta")
     
-    df_user['date_to_process'] = df_user.apply(
-        lambda row: row['publishedAt'] if 'publishedAt' in row and row['publishedAt'] else row['click_time'],
-        axis=1
-    )
+    # --- PERBAIKAN DI SINI ---
+    # Pastikan kolom 'publishedAt' ada, jika tidak, buat dengan nilai dari 'click_time'
+    if 'publishedAt' not in df_user.columns:
+        df_user['publishedAt'] = df_user['click_time']
+
+    df_user['date_to_process'] = df_user['publishedAt']
 
     df_user["timestamp"] = pd.to_datetime(
         df_user["date_to_process"],
@@ -604,10 +603,14 @@ def main():
                         st.info("❗ Tidak ditemukan berita dalam riwayat untuk topik ini.")
                         continue
                     
-                    # Logika ini sudah ada di load_history_from_github, jadi tidak perlu di sini
-                    # Tetapi tetap buat kolom datetime untuk sorting
+                    # --- PERBAIKAN UNTUK MENGATASI KEYERROR ---
+                    # Periksa apakah kolom 'publishedAt' ada, jika tidak, buat dengan nilai dari 'click_time'
+                    if 'publishedAt' not in df_filtered.columns:
+                        df_filtered['publishedAt'] = df_filtered['click_time']
+                    
                     df_filtered['publishedAt_dt'] = pd.to_datetime(df_filtered['publishedAt'], errors='coerce')
                     df_filtered.dropna(subset=['publishedAt_dt'], inplace=True)
+                    
                     if df_filtered.empty:
                         st.info("❗ Setelah pembersihan data, tidak ada entri yang valid.")
                         continue
@@ -640,12 +643,11 @@ def main():
                         source_name = get_source_from_url(row['url'])
                         
                         display_time = row['publishedAt']
-                        # Perbaiki format tanggal yang ditampilkan di sini
                         try:
                             dt_obj = datetime.strptime(display_time, "%Y-%m-%d %H:%M")
                             formatted_time = dt_obj.strftime("%d %B %Y %H:%M")
                         except ValueError:
-                            formatted_time = display_time # Fallback jika format tidak cocok
+                            formatted_time = display_time
 
                         st.markdown(f"**[{source_name}]** {row['title']}")
                         st.markdown(f"[{row['url']}]({row['url']})")
@@ -706,7 +708,7 @@ def main():
         else:
             st.warning("Mohon masukkan topik pencarian.")
 
-    if st.session_state.show_results:
+    if st.session_results:
         st.subheader(f"📌 Hasil untuk '{st.session_state.current_query}'")
         
         if st.session_state.current_recommended_results.empty:
@@ -715,7 +717,6 @@ def main():
             for i, row in st.session_state.current_recommended_results.iterrows():
                 source_name = get_source_from_url(row['url'])
                 
-                # Sintaks HTML untuk tombol
                 button_html = f"""<style>.styled-button {{ background-color: #007bff; color: white; padding: 10px 20px; text-align: center; text-decoration: none; display: inline-block; font-size: 16px; margin: 4px 2px; cursor: pointer; border-radius: 8px; border: none; }}</style><button class="styled-button" onclick="window.parent.postMessage({{ streamlit: true, event: 'st_event', data: {{ url: '{row['url']}' }} }}, '*'); window.open('{row['url']}', '_blank');">Buka Artikel & Catat Interaksi</button>"""
 
                 st.markdown(f"**[{source_name}]** {row['title']}")
