@@ -81,17 +81,36 @@ model_sbert = load_resources()
 
 @st.cache_data
 def preprocess_text(text):
-    text = text.lower()
+    text = (text or "").lower()
     text = re.sub(r'http\S+|www\.\S+', '', text)
     text = re.sub(r'\s+', ' ', text).strip()
     return text
 
-# --- Filter ringan untuk RSS supaya nggak terlalu ngawur (tetap SBERT yg ranking) ---
+# =============== Relevansi ketat (di tahap scrape) ===============
+def _keywords(tokens_min3, hay):
+    return sum(tok in hay for tok in tokens_min3)
+
+def is_relevant_strict(query: str, title: str, summary: str, content: str, url: str) -> bool:
+    """
+    - Kalau query punya ≥2 kata (mis. 'tom lembong'), cek frasa persis ada di teks → langsung lolos.
+    - Selain itu, butuh ≥2 token (panjang≥3) muncul di gabungan judul/ringkasan/konten/slug URL.
+    """
+    q = preprocess_text(query)
+    hay = preprocess_text(" ".join([title or "", summary or "", content or "", url or ""]))
+    # frasa persis (nama orang, entitas 2 kata)
+    if len(q.split()) >= 2 and q in hay:
+        return True
+    # token minimum
+    toks = [t for t in re.findall(r"\w+", q) if len(t) >= 3]
+    return _keywords(toks, hay) >= 2
+
+# --- Filter ringan untuk RSS (tetap SBERT yang ranking) ---
 def _keywords_ok(title: str, summary: str, query: str) -> bool:
     q = preprocess_text(query)
     toks = [t for t in re.findall(r"\w+", q) if len(t) >= 3]
     hay = preprocess_text((title or "") + " " + (summary or ""))
-    return any(tok in hay for tok in toks)  # cukup 1 token penting muncul
+    # RSS cukup minimal 1 token biar nggak terlalu ketat
+    return any(tok in hay for tok in toks)
 
 # =================== WAKTU PUBLIKASI ===================
 def _has_tz_info(dt_str: str) -> bool:
@@ -102,7 +121,7 @@ def _has_tz_info(dt_str: str) -> bool:
 @st.cache_data
 def _normalize_to_jakarta(dt_str: str) -> str:
     """
-    Balikkan 'YYYY-MM-DD HH:MM' di Asia/Jakarta.
+    Kembalikan 'YYYY-MM-DD HH:MM' di Asia/Jakarta.
     - Jika string ada timezone (Z/+07:00), parse aware → convert ke Jakarta.
     - Jika string TIDAK ada timezone (naive), anggap itu waktu lokal Jakarta (tanpa geser).
     """
@@ -267,13 +286,12 @@ def fetch_time_and_content(sess, link):
     content = ""
     try:
         time.sleep(random.uniform(0.4, 0.9))
-        ar = sess.get(link, timeout=25)
+        ar = sess.get(link, timeout=20)
         if ar.status_code == 200:
             art_soup = BeautifulSoup(ar.content, "html.parser")
             published_at = extract_published_at_from_article_html(art_soup, link)
-            # ambil sedikit isi untuk membantu relevansi SBERT
             paras = art_soup.select("article p, div.read__content p, div.detail__body p, .text-article p")
-            content = " ".join([p.get_text(" ", strip=True) for p in paras])[:1200]
+            content = " ".join([p.get_text(" ", strip=True) for p in paras])[:1500]
     except Exception:
         pass
     return published_at, content
@@ -287,17 +305,16 @@ def scrape_detik(query, max_articles=15):
     # --- 1) Halaman pencarian Detik ---
     try:
         search_url = f"https://www.detik.com/search/searchall?query={requests.utils.quote(query)}"
-        res = sess.get(search_url, timeout=20)
+        res = sess.get(search_url, timeout=15)
         if res.status_code == 200:
             soup = BeautifulSoup(res.content, "html.parser")
             items = soup.select("article.list-content__item")
             if not items:
-                # variasi layout
                 items = soup.select("li.list__item, div.list__item, div.list-content__item")
             for it in items:
                 try:
                     a = it.select_one("h3.media__title a, h2.media__title a, a.media__link, a[href]")
-                    if not a or not a.get("href"): 
+                    if not a or not a.get("href"):
                         continue
                     link = a["href"]
                     title = a.get_text(strip=True)
@@ -306,11 +323,14 @@ def scrape_detik(query, max_articles=15):
 
                     published_at, content = fetch_time_and_content(sess, link)
                     if not published_at:
-                        # coba baca tanggal yang tampil di kartu
                         dt_hint = it.select_one(".media__date, .date")
                         if dt_hint:
                             published_at = _parse_id_date_text(dt_hint.get_text(" ", strip=True))
                     if not published_at:
+                        continue
+
+                    # >>> relevansi ketat
+                    if not is_relevant_strict(query, title, description, content, link):
                         continue
 
                     data.append({
@@ -328,7 +348,7 @@ def scrape_detik(query, max_articles=15):
     except Exception:
         pass
 
-    # --- 2) Fallback RSS Detik (filter ringan berdasarkan query) ---
+    # --- 2) Fallback RSS Detik (dengan filter ringan + konfirmasi waktu dari halaman) ---
     if len(data) < max_articles:
         feeds = [
             "https://news.detik.com/rss",
@@ -355,16 +375,20 @@ def scrape_detik(query, max_articles=15):
                     summary = getattr(e, "summary", "")
                     if not link or not _keywords_ok(title, summary, query):
                         continue
+
                     published_at = ""
                     if getattr(e, "published_parsed", None):
                         utc_dt = datetime(*e.published_parsed[:6], tzinfo=pytz.UTC)
                         published_at = utc_dt.astimezone(TZ_JKT).strftime("%Y-%m-%d %H:%M")
-
-                    # konfirmasi ke halaman
                     real, content = fetch_time_and_content(sess, link)
                     if real: published_at = real
                     if not published_at:
                         continue
+
+                    # relevansi ketat di sini juga
+                    if not is_relevant_strict(query, title, summary, content, link):
+                        continue
+
                     data.append({
                         "source": "Detik",
                         "title": title,
@@ -378,8 +402,7 @@ def scrape_detik(query, max_articles=15):
 
     if not data:
         return pd.DataFrame()
-    df = pd.DataFrame(data).drop_duplicates(subset=["url"])
-    return df
+    return pd.DataFrame(data).drop_duplicates(subset=["url"])
 
 @st.cache_data(show_spinner="Mencari berita di CNN...", ttl=300)
 def scrape_cnn_fixed(query, max_results=12):
@@ -417,6 +440,11 @@ def scrape_cnn_fixed(query, max_results=12):
                     if real: pub = real
                     if not pub:
                         continue
+
+                    # relevansi ketat
+                    if not is_relevant_strict(query, title, summary, content, link):
+                        continue
+
                     results.append({
                         "source": "CNN",
                         "title": title,
@@ -426,7 +454,7 @@ def scrape_cnn_fixed(query, max_results=12):
                         "publishedAt": pub
                     })
             else:
-                res = sess.get(url, timeout=20)
+                res = sess.get(url, timeout=15)
                 if res.status_code == 200:
                     soup = BeautifulSoup(res.content, 'html.parser')
                     articles_raw = soup.find_all('article', class_='box--card')
@@ -446,6 +474,11 @@ def scrape_cnn_fixed(query, max_results=12):
                             pub, content = fetch_time_and_content(sess, link)
                             if not pub:
                                 continue
+
+                            # relevansi ketat
+                            if not is_relevant_strict(query, title, summary, content, link):
+                                continue
+
                             results.append({
                                 "source": get_source_from_url(link),
                                 "title": title,
@@ -458,7 +491,7 @@ def scrape_cnn_fixed(query, max_results=12):
                             continue
         except Exception:
             continue
-    return pd.DataFrame(results)
+    return pd.DataFrame(results).drop_duplicates(subset=["url"]) if results else pd.DataFrame()
 
 @st.cache_data(show_spinner="Mencari berita di Kompas...", ttl=300)
 def scrape_kompas_fixed(query, max_articles=12):
@@ -468,7 +501,7 @@ def scrape_kompas_fixed(query, max_articles=12):
     # --- 1) Halaman pencarian Kompas ---
     try:
         search_url = f"https://search.kompas.com/search?q={requests.utils.quote(query)}"
-        res = sess.get(search_url, timeout=25)
+        res = sess.get(search_url, timeout=20)
         if res.status_code == 200:
             soup = BeautifulSoup(res.text, "html.parser")
             items = soup.select("div.articleItem")
@@ -487,17 +520,19 @@ def scrape_kompas_fixed(query, max_articles=12):
 
                     pub, content = fetch_time_and_content(sess, url)
                     if not pub:
-                        # fallback via read__time jika ada
                         ttag = it.select_one(".read__time, .date")
                         if ttag:
                             pub = _parse_id_date_text(ttag.get_text(" ", strip=True))
                     if not pub:
-                        # fallback terakhir: timestamp di URL
                         m = re.search(r"/(\d{4})/(\d{2})/(\d{2})/(\d{4,8})", url)
                         if m:
                             y, mo, d, hhmm = m.groups()
                             pub = _normalize_to_jakarta(f"{y}-{mo}-{d} {hhmm[:2]}:{hhmm[2:4]}")
                     if not pub:
+                        continue
+
+                    # relevansi ketat
+                    if not is_relevant_strict(query, title, "", content, url):
                         continue
 
                     data.append({
@@ -545,6 +580,11 @@ def scrape_kompas_fixed(query, max_articles=12):
                     if real: pub = real
                     if not pub:
                         continue
+
+                    # relevansi ketat
+                    if not is_relevant_strict(query, title, summary, content, link):
+                        continue
+
                     data.append({
                         "source": "Kompas",
                         "title": title,
@@ -718,55 +758,13 @@ def train_model(df_train):
     st.sidebar.write(f"- Skor F1: {f1_score(y_test, y_pred):.2f}")
     return clf
 
-# =================== REKOMENDASI (dengan fallback per sumber) ===================
-def _ensure_min_per_source(original_df, filtered_df, per_source=3):
-    """
-    Pastikan tiap sumber (Detik, CNN, Kompas) minimal `per_source` item.
-    Robust terhadap kasus kolom 'source' hilang / frame kosong.
-    """
-    if not isinstance(filtered_df, pd.DataFrame) or filtered_df.empty:
-        return filtered_df if isinstance(filtered_df, pd.DataFrame) else pd.DataFrame()
-
-    res = filtered_df.copy()
-
-    # pastikan 'source' & 'publishedAt_dt' ada
-    if 'source' not in res.columns:
-        if 'url' in res.columns:
-            res['source'] = res['url'].apply(get_source_from_url)
-        else:
-            return res
-    if 'publishedAt_dt' not in res.columns and 'publishedAt' in res.columns:
-        res['publishedAt_dt'] = pd.to_datetime(res['publishedAt'], errors='coerce')
-
-    orig = original_df.copy()
-    if 'source' not in orig.columns and 'url' in orig.columns:
-        orig['source'] = orig['url'].apply(get_source_from_url)
-    if 'publishedAt_dt' not in orig.columns and 'publishedAt' in orig.columns:
-        orig['publishedAt_dt'] = pd.to_datetime(orig['publishedAt'], errors='coerce')
-
-    for src in ["Detik", "CNN", "Kompas"]:
-        have = (res['source'] == src).sum()
-        need = max(0, per_source - have)
-        if need > 0 and not orig.empty:
-            pool = orig[(orig['source'] == src) & (~orig['url'].isin(res['url']))]
-            if not pool.empty:
-                pool = pool.sort_values('publishedAt_dt', ascending=False).head(need)
-                res = pd.concat([res, pool], ignore_index=True)
-
-    res = res.drop_duplicates(subset=['url'])
-    try:
-        res = res.sort_values(['source', 'publishedAt_dt'], ascending=[True, False]).reset_index(drop=True)
-    except Exception:
-        res = res.sort_values('publishedAt_dt', ascending=False).reset_index(drop=True)
-    return res
-
-def recommend(df, query, clf, n_per_source=3, min_score=0.5, ensure_all_sources=True):
+# =================== REKOMENDASI (SBERT) ===================
+def recommend(df, query, clf, n_per_source=3, min_score=0.55, ensure_all_sources=False):
     if df.empty:
         return pd.DataFrame()
     df = df.copy()
     df.drop_duplicates(subset=['url'], inplace=True)
 
-    # gabungan teks untuk SBERT
     df["processed"] = df.apply(lambda r: preprocess_text(
         (r.get('title', '') or '') + ' ' +
         (r.get('description', '') or '') + ' ' +
@@ -782,7 +780,7 @@ def recommend(df, query, clf, n_per_source=3, min_score=0.5, ensure_all_sources=
     if df.empty:
         return pd.DataFrame()
 
-    # Ranking dengan model/similarity (SBERT saja)
+    # Ranking
     if clf:
         scores = clf.predict_proba(vec)[:, 1]
         df["score"] = scores
@@ -809,10 +807,7 @@ def recommend(df, query, clf, n_per_source=3, min_score=0.5, ensure_all_sources=
         got = filtered.groupby("source", group_keys=False).apply(top_n_sim, include_groups=False)
 
     got = got.sort_values(by=['publishedAt_dt'], ascending=False).reset_index(drop=True)
-
-    if ensure_all_sources and isinstance(got, pd.DataFrame) and not got.empty:
-        got = _ensure_min_per_source(original_df=df, filtered_df=got, per_source=n_per_source)
-
+    # NOTE: ensure_all_sources=False by default agar tidak memaksa artikel tidak relevan masuk
     return got
 
 def format_display_time(display_time: str) -> str:
@@ -830,7 +825,7 @@ def handle_js_click(url):
 
 def main():
     st.title("📰 Rekomendasi Berita")
-    st.markdown("Aplikasi ini merekomendasikan berita dari Detik, CNN, dan Kompas berdasarkan riwayat dan topik Anda.")
+    st.markdown("Aplikasi ini merekomendasikan berita dari Detik, CNN, dan Kompas berdasarkan riwayat dan topik Anda. Waktu publikasi diambil langsung dari halaman artikel.")
 
     if st.sidebar.button("Bersihkan Cache & Muat Ulang"):
         st.cache_data.clear()
@@ -867,10 +862,15 @@ def main():
                         st.info("❗ Tidak ditemukan berita terbaru untuk topik ini.")
                         continue
 
-                    results_latest = recommend(df_latest, q, clf, n_per_source=3, min_score=0.5, ensure_all_sources=True)
+                    # tampilkan ringkas jumlah per sumber (setelah filter relevansi di scraper)
+                    cnt = df_latest['source'].value_counts().to_dict()
+                    st.caption(f"Hasil (relevan): Detik={cnt.get('Detik',0)} | CNN={cnt.get('CNN',0)} | Kompas={cnt.get('Kompas',0)}")
+
+                    # rekomendasi SBERT tanpa memaksa 3 per sumber (biar relevan aja yang keluar)
+                    results_latest = recommend(df_latest, q, clf, n_per_source=3, min_score=0.55, ensure_all_sources=False)
 
                     if results_latest.empty:
-                        st.info("❗ Tidak ada hasil dari portal untuk topik ini.")
+                        st.info("❗ Tidak ada hasil relevan dari portal untuk topik ini.")
                         continue
 
                     for _, row in results_latest.iterrows():
@@ -897,7 +897,7 @@ def main():
         if df_news.empty:
             st.info("❗ Tidak ditemukan berita.")
         else:
-            results = recommend(df_news, q, clf, n_per_source=1, min_score=0.5, ensure_all_sources=False)
+            results = recommend(df_news, q, clf, n_per_source=1, min_score=0.55, ensure_all_sources=False)
             if results.empty:
                 st.info("❗ Tidak ada hasil relevan.")
             else:
@@ -926,13 +926,12 @@ def main():
                     st.session_state.clicked_urls_in_session
                 )
                 st.cache_data.clear()
-                st.session_state
                 st.session_state.history = load_history_from_github()
             with st.spinner('Mengambil berita dan merekomendasikan...'):
                 st.session_state.current_search_results = scrape_all_sources(search_query)
                 results = recommend(
                     st.session_state.current_search_results,
-                    search_query, clf, n_per_source=3, min_score=0.5, ensure_all_sources=True
+                    search_query, clf, n_per_source=3, min_score=0.55, ensure_all_sources=False
                 )
                 st.session_state.current_recommended_results = results
             st.session_state.show_results = True
