@@ -167,6 +167,7 @@ def scrape_detik(query, max_articles=15):
 
                         title = title_tag.get_text(strip=True)
                         description = description_tag.get_text(strip=True) if description_tag else ""
+                        published_at = date_tag.get('title', '') if date_tag else ''
                         published_at = extract_datetime_from_title(published_at, link) # Tambahkan link sebagai parameter
 
                         if not published_at:
