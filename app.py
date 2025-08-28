@@ -662,9 +662,9 @@ def main():
                         try:
                             dt_obj = datetime.strptime(display_time, "%Y-%m-%d %H:%M")
                             if dt_obj.strftime("%H:%M") == "00:00":
-                                formatted_time = dt_obj.strftime("%d %B %Y")
+                                formatted_time = dt_obj.strftime("%Y-%m-%d")
                             else:
-                                formatted_time = dt_obj.strftime("%d %B %Y %H:%M")
+                                formatted_time = dt_obj.strftime("%Y-%m-%d %H:%M")
                         except (ValueError, TypeError):
                             formatted_time = display_time
 
@@ -701,9 +701,9 @@ def main():
                     try:
                         dt_obj = datetime.strptime(display_time, "%Y-%m-%d %H:%M")
                         if dt_obj.strftime("%H:%M") == "00:00":
-                            formatted_time = dt_obj.strftime("%d %B %Y")
+                            formatted_time = dt_obj.strftime("%Y-%m-%d")
                         else:
-                            formatted_time = dt_obj.strftime("%d %B %Y %H:%M")
+                            formatted_time = dt_obj.strftime("%Y-%m-%d %H:%M")
                     except (ValueError, TypeError):
                         formatted_time = display_time
 
@@ -756,9 +756,9 @@ def main():
                 try:
                     dt_obj = datetime.strptime(display_time, "%Y-%m-%d %H:%M")
                     if dt_obj.strftime("%H:%M") == "00:00":
-                        formatted_time = dt_obj.strftime("%d %B %Y")
+                        formatted_time = dt_obj.strftime("%Y-%m-%d")
                     else:
-                        formatted_time = dt_obj.strftime("%d %B %Y %H:%M")
+                        formatted_time = dt_obj.strftime("%Y-%m-%d %H:%M")
                 except (ValueError, TypeError):
                     formatted_time = display_time
 
