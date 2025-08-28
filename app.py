@@ -401,10 +401,24 @@ def get_recent_queries_by_days(user_id, df, days=3):
     df_user = df[df["user_id"] == user_id].copy()
     jakarta_tz = pytz.timezone("Asia/Jakarta")
 
+    # Menggunakan 'publishedAt' jika tersedia, jika tidak, gunakan 'click_time'
+    df_user['date_to_process'] = df_user.apply(
+        lambda row: row.get('publishedAt') if 'publishedAt' in row and pd.notna(row.get('publishedAt')) else row.get('click_time'),
+        axis=1
+    )
+
     df_user["timestamp"] = pd.to_datetime(
-        df_user["click_time"],
+        df_user["date_to_process"],
         format="%A, %d %B %Y %H:%M",
         errors='coerce'
+    )
+    # Coba format lain jika yang pertama gagal
+    df_user["timestamp"].fillna(
+        pd.to_datetime(
+            df_user["date_to_process"],
+            format="%Y-%m-%d %H:%M",
+            errors='coerce'
+        ), inplace=True
     )
     df_user = df_user.dropna(subset=['timestamp']).copy()
     if df_user.empty:
@@ -442,12 +456,24 @@ def get_most_frequent_topics(user_id, df, days=3):
         return []
     df_user = df[df["user_id"] == user_id].copy()
     jakarta_tz = pytz.timezone("Asia/Jakarta")
+
+    df_user['date_to_process'] = df_user.apply(
+        lambda row: row.get('publishedAt') if 'publishedAt' in row and pd.notna(row.get('publishedAt')) else row.get('click_time'),
+        axis=1
+    )
     df_user["timestamp"] = pd.to_datetime(
-        df_user["click_time"],
+        df_user["date_to_process"],
         format="%A, %d %B %Y %H:%M",
         errors='coerce'
-    ).dt.tz_localize(jakarta_tz, ambiguous='NaT', nonexistent='NaT')
-    df_user = df_user.dropna(subset=['timestamp'])
+    )
+    df_user["timestamp"].fillna(
+        pd.to_datetime(
+            df_user["date_to_process"],
+            format="%Y-%m-%d %H:%M",
+            errors='coerce'
+        ), inplace=True
+    )
+    df_user = df_user.dropna(subset=['timestamp']).copy()
     
     now = datetime.now(jakarta_tz)
     cutoff_time = now - timedelta(days=days)
@@ -584,16 +610,42 @@ def main():
                         st.info("❗ Tidak ditemukan berita dalam riwayat untuk topik ini.")
                         continue
                     
-                    # Tambahkan baris ini untuk memastikan kolom 'publishedAt' ada
-                    if 'publishedAt' not in df_filtered.columns:
-                        df_filtered['publishedAt'] = df_filtered['click_time']
+                    # --- PERBAIKAN UTAMA DI SINI ---
+                    # 1. Jadikan 'publishedAt' sebagai acuan utama jika ada. Jika tidak, pakai 'click_time'.
+                    df_filtered['datetime_to_sort'] = df_filtered.apply(
+                        lambda row: row.get('publishedAt') if 'publishedAt' in row and pd.notna(row.get('publishedAt')) else row.get('click_time'),
+                        axis=1
+                    )
                     
+                    # 2. Konversi kolom baru ini menjadi datetime dengan penanganan error yang lebih baik
+                    df_filtered['publishedAt_dt'] = pd.to_datetime(
+                        df_filtered['datetime_to_sort'],
+                        format="%Y-%m-%d %H:%M",
+                        errors='coerce'
+                    )
+                    # Jika format yang pertama gagal (misal, karena format lama dari click_time), coba format yang lain.
+                    df_filtered['publishedAt_dt'].fillna(
+                        pd.to_datetime(
+                            df_filtered['datetime_to_sort'],
+                            format="%A, %d %B %Y %H:%M",
+                            errors='coerce'
+                        ), inplace=True
+                    )
+                    
+                    df_filtered = df_filtered.dropna(subset=['publishedAt_dt']).copy()
+                    
+                    if df_filtered.empty:
+                        st.info("❗ Setelah pembersihan data, tidak ada entri yang valid.")
+                        continue
+                    # --- AKHIR PERBAIKAN ---
+
                     df_filtered['processed'] = df_filtered.apply(lambda row: preprocess_text(row['title'] + ' ' + str(row.get('content', ''))), axis=1)
                     
                     q_vec = model_sbert.encode([preprocess_text(q)])
                     df_filtered['similarity'] = df_filtered['processed'].apply(lambda x: cosine_similarity([model_sbert.encode(x)], q_vec)[0][0])
                     
                     if clf:
+                        # Ensure 'final_score' column is created before sorting
                         df_filtered['final_score'] = clf.predict_proba(model_sbert.encode(df_filtered['processed'].tolist()))[:, 1]
                         
                         def top_n_history(x):
@@ -615,14 +667,15 @@ def main():
                     for i, row in articles_to_show.iterrows():
                         source_name = get_source_from_url(row['url'])
                         
-                        # BARIS YANG DIUBAH
                         # Menggunakan 'publishedAt' dari file history jika ada, jika tidak, kembali ke 'click_time'
                         display_time = row.get('publishedAt', row.get('click_time', 'Tidak Diketahui'))
 
                         st.markdown(f"**[{source_name}]** {row['title']}")
                         st.markdown(f"[{row['url']}]({row['url']})")
                         st.write(f"Waktu Publikasi: *{display_time}*")
-                        st.write(f"Skor: `{row[skor_key]:.2f}`")
+                        # Perbaikan: Periksa keberadaan kolom 'skor_key' sebelum menampilkannya
+                        if skor_key in row:
+                            st.write(f"Skor: `{row[skor_key]:.2f}`")
                         st.markdown("---")
     else:
         st.info("Belum ada riwayat pencarian pada 3 hari terakhir.")
