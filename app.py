@@ -125,7 +125,6 @@ def extract_datetime_from_title(title, url=None):
             
     return "" # Mengembalikan string kosong jika tidak ditemukan, untuk menghindari tanggal yang salah
 
-
 @st.cache_data
 def is_relevant(title, query, content="", threshold=0.5):
     combined = f"{title} {content}"
@@ -150,7 +149,6 @@ def scrape_detik(query, max_articles=15):
             res = requests.get(url, headers=headers, timeout=10)
             if res.status_code == 200:
                 soup = BeautifulSoup(res.content, "html.parser")
-                # PERBAIKAN: Selektor HTML diperbarui
                 articles_raw = soup.select("article.list-content__item")
                 if not articles_raw:
                     time.sleep(random.uniform(1, 3))
@@ -168,7 +166,7 @@ def scrape_detik(query, max_articles=15):
                         title = title_tag.get_text(strip=True)
                         description = description_tag.get_text(strip=True) if description_tag else ""
                         published_at = date_tag.get('title', '') if date_tag else ''
-                        published_at = extract_datetime_from_title(published_at, link) # Tambahkan link sebagai parameter
+                        published_at = extract_datetime_from_title(published_at, link)
 
                         if not published_at:
                             jakarta_tz = pytz.timezone("Asia/Jakarta")
@@ -194,7 +192,6 @@ def scrape_detik(query, max_articles=15):
             time.sleep(random.uniform(1, 3))
     return pd.DataFrame()
 
-# PERBAIKAN: Sertakan `query` dalam cache key untuk memaksa scraping baru
 @st.cache_data(show_spinner="Mencari berita di CNN...")
 def scrape_cnn_fixed(query, max_results=10):
     url = f"https://www.cnnindonesia.com/search?query={query.replace(' ', '+')}"
@@ -206,7 +203,6 @@ def scrape_cnn_fixed(query, max_results=10):
         
         if res.status_code == 200:
             soup = BeautifulSoup(res.content, 'html.parser')
-            # PERBAIKAN: Selektor HTML diperbarui
             articles = soup.find_all('article', class_='box--card')
             
             for article in articles:
@@ -219,7 +215,7 @@ def scrape_cnn_fixed(query, max_results=10):
                 summary = article.find('span', class_='box--card__desc').get_text(strip=True) if article.find('span', class_='box--card__desc') else ""
                 published = article.find('span', class_='box--card__date').get_text(strip=True) if article.find('span', class_='box--card__date') else ""
                 
-                published_at = extract_datetime_from_title(published, link) # Tambahkan link sebagai parameter
+                published_at = extract_datetime_from_title(published, link)
 
                 if not published_at:
                     jakarta_tz = pytz.timezone("Asia/Jakarta")
@@ -244,8 +240,6 @@ def scrape_cnn_fixed(query, max_results=10):
 
     return pd.DataFrame(results)
 
-
-# PERBAIKAN: Sertakan `query` dalam cache key untuk memaksa scraping baru
 @st.cache_data(show_spinner="Mencari berita di Kompas...")
 def scrape_kompas_fixed(query, max_articles=10):
     search_url = f"https://search.kompas.com/search?q={query.replace(' ', '+')}"
@@ -264,7 +258,6 @@ def scrape_kompas_fixed(query, max_articles=10):
             
             if res.status_code == 200:
                 soup = BeautifulSoup(res.text, "html.parser")
-                # PERBAIKAN: Selektor HTML diperbarui
                 articles = soup.select("div.articleItem")[:max_articles]
                 
                 if not articles:
@@ -296,7 +289,7 @@ def scrape_kompas_fixed(query, max_articles=10):
                         content = " ".join([p.get_text(strip=True) for p in content_paras])
 
                         time_tag = art_soup.select_one("div.read__time")
-                        published = extract_datetime_from_title(time_tag.get_text(strip=True) if time_tag else "", url) # Tambahkan url sebagai parameter
+                        published = extract_datetime_from_title(time_tag.get_text(strip=True) if time_tag else "", url)
 
                         if not published:
                             jakarta_tz = pytz.timezone("Asia/Jakarta")
@@ -322,7 +315,6 @@ def scrape_kompas_fixed(query, max_articles=10):
             time.sleep(random.uniform(1, 3))
     return pd.DataFrame()
 
-# PERBAIKAN: Menambahkan `query` ke `cache_data` untuk memaksa scraping ulang
 @st.cache_data(show_spinner="Menggabungkan hasil...")
 def scrape_all_sources(query):
     dfs = []
@@ -354,6 +346,10 @@ def load_history_from_github():
         contents = repo.get_contents(st.secrets["file_path"])
         file_content = contents.decoded_content.decode('utf-8')
         data = json.loads(file_content)
+        # Tambahkan pemrosesan di sini untuk memastikan semua entri memiliki publishedAt
+        for entry in data:
+            if 'publishedAt' not in entry or not entry['publishedAt']:
+                entry['publishedAt'] = entry.get('click_time', '')
         return pd.DataFrame(data) if isinstance(data, list) and data else pd.DataFrame()
     except Exception as e:
         st.error(f"Gagal memuat riwayat dari GitHub: {e}")
@@ -381,7 +377,7 @@ def save_interaction_to_github(user_id, query, all_articles, clicked_urls):
             "content": str(row.get('content', '')),
             "source": str(row.get('source', '')),
             "click_time": now,
-            "publishedAt": row.get('publishedAt', ''), # Menambahkan kolom publishedAt ke riwayat
+            "publishedAt": row.get('publishedAt', now),
             "label": 1 if row.get('url', '') in clicked_urls else 0
         }
         history_list.append(article_log)
@@ -400,29 +396,26 @@ def get_recent_queries_by_days(user_id, df, days=3):
 
     df_user = df[df["user_id"] == user_id].copy()
     jakarta_tz = pytz.timezone("Asia/Jakarta")
-
-    # Menggunakan 'publishedAt' jika tersedia, jika tidak, gunakan 'click_time'
+    
+    # Gunakan 'publishedAt' untuk mengelompokkan riwayat
     df_user['date_to_process'] = df_user.apply(
-        lambda row: row.get('publishedAt') if 'publishedAt' in row and pd.notna(row.get('publishedAt')) else row.get('click_time'),
+        lambda row: row['publishedAt'] if 'publishedAt' in row and row['publishedAt'] else row['click_time'],
         axis=1
     )
 
     df_user["timestamp"] = pd.to_datetime(
         df_user["date_to_process"],
-        format="%A, %d %B %Y %H:%M",
+        format="%Y-%m-%d %H:%M",
         errors='coerce'
     )
-    # Coba format lain jika yang pertama gagal
     df_user["timestamp"].fillna(
         pd.to_datetime(
             df_user["date_to_process"],
-            format="%Y-%m-%d %H:%M",
+            format="%A, %d %B %Y %H:%M",
             errors='coerce'
         ), inplace=True
     )
     df_user = df_user.dropna(subset=['timestamp']).copy()
-    if df_user.empty:
-        return {}
     
     try:
         df_user['timestamp'] = pd.to_datetime(df_user['timestamp']).dt.tz_localize(jakarta_tz, ambiguous='NaT', nonexistent='NaT')
@@ -452,29 +445,30 @@ def get_recent_queries_by_days(user_id, df, days=3):
     return ordered_grouped_queries
 
 def get_most_frequent_topics(user_id, df, days=3):
-    if df.empty or "click_time" not in df.columns:
+    if df.empty:
         return []
     df_user = df[df["user_id"] == user_id].copy()
     jakarta_tz = pytz.timezone("Asia/Jakarta")
-
+    
     df_user['date_to_process'] = df_user.apply(
-        lambda row: row.get('publishedAt') if 'publishedAt' in row and pd.notna(row.get('publishedAt')) else row.get('click_time'),
+        lambda row: row['publishedAt'] if 'publishedAt' in row and row['publishedAt'] else row['click_time'],
         axis=1
     )
+
     df_user["timestamp"] = pd.to_datetime(
         df_user["date_to_process"],
-        format="%A, %d %B %Y %H:%M",
+        format="%Y-%m-%d %H:%M",
         errors='coerce'
     )
     df_user["timestamp"].fillna(
         pd.to_datetime(
             df_user["date_to_process"],
-            format="%Y-%m-%d %H:%M",
+            format="%A, %d %B %Y %H:%M",
             errors='coerce'
         ), inplace=True
     )
-    df_user = df_user.dropna(subset=['timestamp']).copy()
-    
+    df_user = df_user.dropna(subset=['timestamp'])
+
     now = datetime.now(jakarta_tz)
     cutoff_time = now - timedelta(days=days)
     
@@ -610,34 +604,13 @@ def main():
                         st.info("❗ Tidak ditemukan berita dalam riwayat untuk topik ini.")
                         continue
                     
-                    # --- PERBAIKAN UTAMA DI SINI ---
-                    # 1. Jadikan 'publishedAt' sebagai acuan utama jika ada. Jika tidak, pakai 'click_time'.
-                    df_filtered['datetime_to_sort'] = df_filtered.apply(
-                        lambda row: row.get('publishedAt') if 'publishedAt' in row and pd.notna(row.get('publishedAt')) else row.get('click_time'),
-                        axis=1
-                    )
-                    
-                    # 2. Konversi kolom baru ini menjadi datetime dengan penanganan error yang lebih baik
-                    df_filtered['publishedAt_dt'] = pd.to_datetime(
-                        df_filtered['datetime_to_sort'],
-                        format="%Y-%m-%d %H:%M",
-                        errors='coerce'
-                    )
-                    # Jika format yang pertama gagal (misal, karena format lama dari click_time), coba format yang lain.
-                    df_filtered['publishedAt_dt'].fillna(
-                        pd.to_datetime(
-                            df_filtered['datetime_to_sort'],
-                            format="%A, %d %B %Y %H:%M",
-                            errors='coerce'
-                        ), inplace=True
-                    )
-                    
-                    df_filtered = df_filtered.dropna(subset=['publishedAt_dt']).copy()
-                    
+                    # Logika ini sudah ada di load_history_from_github, jadi tidak perlu di sini
+                    # Tetapi tetap buat kolom datetime untuk sorting
+                    df_filtered['publishedAt_dt'] = pd.to_datetime(df_filtered['publishedAt'], errors='coerce')
+                    df_filtered.dropna(subset=['publishedAt_dt'], inplace=True)
                     if df_filtered.empty:
                         st.info("❗ Setelah pembersihan data, tidak ada entri yang valid.")
                         continue
-                    # --- AKHIR PERBAIKAN ---
 
                     df_filtered['processed'] = df_filtered.apply(lambda row: preprocess_text(row['title'] + ' ' + str(row.get('content', ''))), axis=1)
                     
@@ -645,7 +618,6 @@ def main():
                     df_filtered['similarity'] = df_filtered['processed'].apply(lambda x: cosine_similarity([model_sbert.encode(x)], q_vec)[0][0])
                     
                     if clf:
-                        # Ensure 'final_score' column is created before sorting
                         df_filtered['final_score'] = clf.predict_proba(model_sbert.encode(df_filtered['processed'].tolist()))[:, 1]
                         
                         def top_n_history(x):
@@ -667,13 +639,17 @@ def main():
                     for i, row in articles_to_show.iterrows():
                         source_name = get_source_from_url(row['url'])
                         
-                        # Menggunakan 'publishedAt' dari file history jika ada, jika tidak, kembali ke 'click_time'
-                        display_time = row.get('publishedAt', row.get('click_time', 'Tidak Diketahui'))
+                        display_time = row['publishedAt']
+                        # Perbaiki format tanggal yang ditampilkan di sini
+                        try:
+                            dt_obj = datetime.strptime(display_time, "%Y-%m-%d %H:%M")
+                            formatted_time = dt_obj.strftime("%d %B %Y %H:%M")
+                        except ValueError:
+                            formatted_time = display_time # Fallback jika format tidak cocok
 
                         st.markdown(f"**[{source_name}]** {row['title']}")
                         st.markdown(f"[{row['url']}]({row['url']})")
-                        st.write(f"Waktu Publikasi: *{display_time}*")
-                        # Perbaikan: Periksa keberadaan kolom 'skor_key' sebelum menampilkannya
+                        st.write(f"Waktu Publikasi: *{formatted_time}*")
                         if skor_key in row:
                             st.write(f"Skor: `{row[skor_key]:.2f}`")
                         st.markdown("---")
@@ -739,7 +715,7 @@ def main():
             for i, row in st.session_state.current_recommended_results.iterrows():
                 source_name = get_source_from_url(row['url'])
                 
-                # Perbaikan di sini: Sintaks HTML yang benar dan fungsional
+                # Sintaks HTML untuk tombol
                 button_html = f"""<style>.styled-button {{ background-color: #007bff; color: white; padding: 10px 20px; text-align: center; text-decoration: none; display: inline-block; font-size: 16px; margin: 4px 2px; cursor: pointer; border-radius: 8px; border: none; }}</style><button class="styled-button" onclick="window.parent.postMessage({{ streamlit: true, event: 'st_event', data: {{ url: '{row['url']}' }} }}, '*'); window.open('{row['url']}', '_blank');">Buka Artikel & Catat Interaksi</button>"""
 
                 st.markdown(f"**[{source_name}]** {row['title']}")
