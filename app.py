@@ -33,7 +33,9 @@ for k, v in {
     "current_query": "",
     "current_recommended_results": pd.DataFrame(),
     "clicked_urls_in_session": [],
-    "history_refresh_trigger": False,   # pemicu muat artikel di "Per Tanggal" setelah ganti topik
+    # mekanisme stabil untuk memicu muat artikel di "Per Tanggal"
+    "topic_change_counter": 0,        # naik setiap ganti topik
+    "per_tanggal_done_counter": 0,    # penanda sudah di-render
 }.items():
     if k not in S: S[k] = v
 
@@ -222,7 +224,7 @@ def extract_published_at_from_article_html(art_soup, url=""):
                 if t: return t
     ttag = art_soup.find("time", attrs={"datetime": True})
     if ttag and ttag.get("datetime"):
-        t = _normalize_to_jakarta(ttag["datetime"]); 
+        t = _normalize_to_jakarta(ttag["datetime"])
         if t: return t
     for sel in ["div.detail__date","div.read__time","div.date","span.date","span.box__date","div.the_date","p.date","time"]:
         tag = art_soup.select_one(sel)
@@ -677,7 +679,8 @@ def main():
         if url and (url not in S.clicked_urls_in_session):
             S.clicked_urls_in_session.append(url)
         if silent_flag:
-            st.write(""); st.stop()
+            st.write("")  # respon minimal untuk fetch()
+            st.stop()
         else:
             components.html(
                 f"""
@@ -690,12 +693,13 @@ def main():
                 </script>
                 """,
                 height=0,
-            ); st.stop()
+            )
+            st.stop()
 
     st.title("📰 Sistem Rekomendasi Berita")
     st.markdown("Aplikasi ini merekomendasikan berita dari Detik, CNN Indonesia, dan Kompas berdasarkan riwayat topik. Waktu publikasi diambil langsung dari halaman artikel.")
 
-    # mount JS + CSS
+    # mount JS + CSS (tanpa teks counter klik)
     mount_click_logger_js()
     st.markdown("""
         <style>
@@ -717,7 +721,7 @@ def main():
     if S.history.empty:
         S.history = load_history_from_github()
 
-    # model personalisasi: aman dari error
+    # model personalisasi (opsional, aman dari error)
     st.sidebar.header("Model Personalisasi")
     try:
         df_train = build_training_data(USER_ID)
@@ -735,11 +739,12 @@ def main():
     st.header("📚 Pencarian Berita per Tanggal")
     grouped_queries = get_recent_queries_by_days(USER_ID, S.history, days=3)
     if grouped_queries:
+        should_refresh_per_tanggal = S.topic_change_counter > S.per_tanggal_done_counter
         for date, queries in grouped_queries.items():
             st.subheader(f"Tanggal {date}")
             for q in sorted(set(queries)):
                 with st.expander(f"- {q}", expanded=False):
-                    if S.history_refresh_trigger:
+                    if should_refresh_per_tanggal:
                         with st.spinner("Mengambil berita terbaru dari 3 sumber..."):
                             df_latest = scrape_all_sources(q)
                         if df_latest.empty:
@@ -765,9 +770,9 @@ def main():
                                     st.markdown(make_logged_link(row["url"], q), unsafe_allow_html=True)
                                     st.markdown("---")
                     else:
-                        st.caption("Ganti topik di kolom pencarian agar bagian ini memuat artikel terbaru.")
-        if S.history_refresh_trigger:
-            S.history_refresh_trigger = False
+                        st.caption("Ganti topik pada kolom pencarian agar bagian ini memuat artikel terbaru.")
+        if should_refresh_per_tanggal:
+            S.per_tanggal_done_counter = S.topic_change_counter
     else:
         st.info("Belum ada riwayat pencarian pada 3 hari terakhir.")
 
@@ -812,8 +817,12 @@ def main():
     search_query = st.text_input("Ketik topik berita yang ingin Anda cari:", key="search_input")
     if st.button("Cari Berita"):
         if search_query:
-            S.history_refresh_trigger = (S.current_query.strip().lower() != search_query.strip().lower()) and (S.current_query != "")
+            # deteksi pergantian topik → trigger per tanggal
+            is_topic_change = (S.current_query.strip().lower() != search_query.strip().lower()) and (S.current_query != "")
+            if is_topic_change:
+                S.topic_change_counter += 1
 
+            # simpan interaksi pencarian sebelumnya
             if S.current_query:
                 save_interaction_to_github(
                     USER_ID,
