@@ -166,22 +166,27 @@ def _normalize_to_jakarta(dt_str):
 def _parse_id_date_text(text):
     if not text: return ""
     t = text.strip()
+    # 12/08/2025 14:30
     m0 = re.search(r"(\d{2})/(\d{2})/(\d{4})[, ]+(\d{2}):(\d{2})", t)
     if m0:
         dd, mm, yyyy, hh, mi = m0.groups()
         return _normalize_to_jakarta(f"{yyyy}-{mm}-{dd} {hh}:{mi}")
+    # Senin, 12 Agu 2025 14:30
     bulan_map = {"Jan":"01","Feb":"02","Mar":"03","Apr":"04","Mei":"05","Jun":"06","Jul":"07","Agu":"08","Sep":"09","Okt":"10","Nov":"11","Des":"12"}
     m1 = re.search(r"(Senin|Selasa|Rabu|Kamis|Jumat|Sabtu|Minggu)\s*,\s*(\d{1,2})\s+(Jan|Feb|Mar|Apr|Mei|Jun|Jul|Agu|Sep|Okt|Nov|Des)\s+(\d{4})\s+(\d{2}:\d{2})", t, flags=re.IGNORECASE)
     if m1:
         _, dd, mon, yyyy, hhmm = m1.groups()
         mm = bulan_map.get(mon[:3].title(), "00")
         if mm != "00": return _normalize_to_jakarta(f"{yyyy}-{mm}-{int(dd):02d} {hhmm}")
+    # Senin, 12/08/2025 14:30
     m2 = re.search(r"(Senin|Selasa|Rabu|Kamis|Jumat|Sabtu|Minggu)\s*,\s*(\d{2})/(\d{2})/(\d{4})\s+(\d{2}:\d{2})", t, flags=re.IGNORECASE)
     if m2:
         _, dd, mm, yyyy, hhmm = m2.groups()
         return _normalize_to_jakarta(f"{yyyy}-{mm}-{dd} {hhmm}")
+    # ISO
     m3 = re.search(r"(\d{4}-\d{2}-\d{2}[ T]\d{2}:\d{2}(?::\d{2})?(?:Z|[+\-]\d{2}:?\d{2})?)", t)
     if m3: return _normalize_to_jakarta(m3.group(1))
+    # relatif
     m4 = re.search(r"(\d+)\s+(menit|jam|hari|minggu)\s+yang\s+lalu", t, flags=re.IGNORECASE)
     if m4:
         jumlah = int(m4.group(1)); unit = m4.group(2).lower()
@@ -457,8 +462,8 @@ def scrape_kompas_fixed(query, max_articles=12):
                     real, content, title_html = fetch_time_content_title(sess, link)
                     if real: pub = real
                     if not pub: continue
-                    if not title or len(title) < 3:  # <-- perbaikan 'or'
-                        title = title_html or slug_to_title(link)  # <-- perbaikan 'or'
+                    if not title or len(title) < 3:
+                        title = title_html or slug_to_title(link)
                     if not is_relevant_strict(query, title, summary, content, link): continue
                     data.append({
                         "source":"Kompas","title":title,"description":summary,
@@ -622,11 +627,16 @@ def recommend(df, query, clf, n_per_source=3, min_score=0.55,
     else:
         final = df["sbert_score"].values
     df["final_score"] = final.clip(0, 1)
+
     filtered = df[df["final_score"] >= min_score].copy()
     if filtered.empty: filtered = df.copy()
-    def _top_n(x): return x.sort_values(["publishedAt_dt","final_score"], ascending=[False, False]).head(n_per_source)
+
+    def _top_n(x): 
+        return x.sort_values(["publishedAt_dt","final_score"], ascending=[False, False]).head(n_per_source)
+
     got = filtered.groupby("source", group_keys=False).apply(_top_n, include_groups=False) if per_source_group \
           else filtered.sort_values(["publishedAt_dt","final_score"], ascending=[False, False]).head(3*n_per_source)
+
     return got.sort_values(["publishedAt_dt","final_score"], ascending=[False, False]).reset_index(drop=True)
 
 # ========================= LINK LOGGING =========================
@@ -638,7 +648,7 @@ def _b64dec(s):
     except Exception: return ""
 
 def make_logged_link(url, query, label="Baca selengkapnya"):
-    # Buka tab baru dan trigger pencatatan klik via perubahan query string
+    # Buka tab baru & trigger pencatatan klik via perubahan query string
     return (
         f'<a class="cta" href="{url}" target="_blank" rel="noopener" '
         f'onclick="return logAndOpenRaw('
@@ -768,7 +778,7 @@ def main():
                         else:
                             for _, row in results_latest.iterrows():
                                 src = get_source_from_url(row["url"])
-                                # judul langsung bisa diklik, tidak ada tombol
+                                # judul langsung bisa diklik, TANPA tombol "Baca selengkapnya"
                                 st.markdown(f"**[{src}]** [{row['title']}]({row['url']})")
                                 st.write(f"Waktu Publikasi: *{format_display_time(row.get('publishedAt',''))}*")
                                 skor = row.get("final_score", row.get("sbert_score", 0.0))
@@ -806,6 +816,7 @@ def main():
                     st.write(f"Waktu: *{format_display_time(row.get('publishedAt',''))}*")
                     skor = row.get("final_score", row.get("sbert_score", 0.0))
                     st.write(f"Skor: `{float(skor):.2f}`")
+                    # bagian ini tetap pakai tombol logged (opsional)
                     st.markdown(make_logged_link(row["url"], q_top), unsafe_allow_html=True)
                     st.markdown("---")
     else:
