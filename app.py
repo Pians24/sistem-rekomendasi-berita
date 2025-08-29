@@ -33,11 +33,12 @@ for k, v in {
     "current_query": "",
     "current_recommended_results": pd.DataFrame(),
     "clicked_urls_in_session": [],
-    # mekanisme stabil untuk memicu muat artikel di "Per Tanggal"
-    "topic_change_counter": 0,        # naik setiap ganti topik
-    "per_tanggal_done_counter": 0,    # penanda sudah di-render
+    # pemicu stabil untuk render "Per Tanggal" setelah ganti topik
+    "topic_change_counter": 0,        # naik saat ganti topik
+    "per_tanggal_done_counter": 0,    # disamakan setelah render
 }.items():
-    if k not in S: S[k] = v
+    if k not in S:
+        S[k] = v
 
 # ========================= HTTP SESSION =========================
 UA = [
@@ -101,7 +102,8 @@ DETIK_SUFFIXES = (" - detikNews", " - detikcom", " | detikcom", " | detikNews")
 def _clean_title(t: str) -> str:
     t = (t or "").strip()
     for suf in DETIK_SUFFIXES:
-        if t.endswith(suf): t = t[: -len(suf)]
+        if t.endswith(suf):
+            t = t[: -len(suf)]
     return t
 
 def slug_to_title(url: str) -> str:
@@ -164,22 +166,27 @@ def _normalize_to_jakarta(dt_str):
 def _parse_id_date_text(text):
     if not text: return ""
     t = text.strip()
+    # 12/08/2025 14:30
     m0 = re.search(r"(\d{2})/(\d{2})/(\d{4})[, ]+(\d{2}):(\d{2})", t)
     if m0:
         dd, mm, yyyy, hh, mi = m0.groups()
         return _normalize_to_jakarta(f"{yyyy}-{mm}-{dd} {hh}:{mi}")
+    # Senin, 12 Agu 2025 14:30
     bulan_map = {"Jan":"01","Feb":"02","Mar":"03","Apr":"04","Mei":"05","Jun":"06","Jul":"07","Agu":"08","Sep":"09","Okt":"10","Nov":"11","Des":"12"}
     m1 = re.search(r"(Senin|Selasa|Rabu|Kamis|Jumat|Sabtu|Minggu)\s*,\s*(\d{1,2})\s+(Jan|Feb|Mar|Apr|Mei|Jun|Jul|Agu|Sep|Okt|Nov|Des)\s+(\d{4})\s+(\d{2}:\d{2})", t, flags=re.IGNORECASE)
     if m1:
         _, dd, mon, yyyy, hhmm = m1.groups()
         mm = bulan_map.get(mon[:3].title(), "00")
         if mm != "00": return _normalize_to_jakarta(f"{yyyy}-{mm}-{int(dd):02d} {hhmm}")
+    # Senin, 12/08/2025 14:30
     m2 = re.search(r"(Senin|Selasa|Rabu|Kamis|Jumat|Sabtu|Minggu)\s*,\s*(\d{2})/(\d{2})/(\d{4})\s+(\d{2}:\d{2})", t, flags=re.IGNORECASE)
     if m2:
         _, dd, mm, yyyy, hhmm = m2.groups()
         return _normalize_to_jakarta(f"{yyyy}-{mm}-{dd} {hhmm}")
+    # ISO
     m3 = re.search(r"(\d{4}-\d{2}-\d{2}[ T]\d{2}:\d{2}(?::\d{2})?(?:Z|[+\-]\d{2}:?\d{2})?)", t)
     if m3: return _normalize_to_jakarta(m3.group(1))
+    # relatif
     m4 = re.search(r"(\d+)\s+(menit|jam|hari|minggu)\s+yang\s+lalu", t, flags=re.IGNORECASE)
     if m4:
         jumlah = int(m4.group(1)); unit = m4.group(2).lower()
@@ -636,32 +643,40 @@ def _b64dec(s):
     except Exception: return ""
 
 def make_logged_link(url, query, label="Baca selengkapnya"):
+    # Buka tab baru dan trigger pencatatan klik via perubahan query string (memicu rerun Python)
     return (
         f'<a class="cta" href="{url}" target="_blank" rel="noopener" '
-        f'onclick="logClick(\'{_b64enc(url)}\', \'{_b64enc(query)}\');return true;">'
+        f'onclick="return logAndOpenRaw('
+        f'\'{url}\', \'{_b64enc(url)}\', \'{_b64enc(query)}\');">'
         f'{label}</a>'
     )
 
 def _get_query_params():
     try:
-        return st.query_params  # Streamlit >=1.38
+        return st.query_params  # Streamlit >= 1.38
     except Exception:
         return st.experimental_get_query_params()
 
 def mount_click_logger_js():
+    # Sediakan fungsi global di jendela utama, bukan hanya iframe
     components.html(
         """
         <script>
-          window.logClick = (b64url, b64q) => {
-            try {
-              const base = window.location.href.split('#')[0];
-              const u = new URL(base);
-              u.searchParams.set('open', b64url);
-              u.searchParams.set('q', b64q);
-              u.searchParams.set('silent', '1');
-              fetch(u.toString(), { method:'GET', credentials:'same-origin', cache:'no-store' }).catch(()=>{});
-            } catch (e) {}
-          };
+          (function(){
+            window.logAndOpenRaw = (url, b64url, b64q) => {
+              try { window.open(url, '_blank'); } catch(e) {}
+              try {
+                const W = (window.parent && window.parent.location) ? window.parent : window;
+                const u = new URL(W.location.href);
+                u.searchParams.set('open', b64url);
+                u.searchParams.set('q', b64q);
+                u.searchParams.set('silent', '1');
+                // Navigasi ringan: memicu Python mencatat klik
+                W.location.href = u.toString();
+              } catch(e) {}
+              return false; // cegah default navigation
+            };
+          })();
         </script>
         """,
         height=0,
@@ -669,39 +684,38 @@ def mount_click_logger_js():
 
 # ========================= APP =========================
 def main():
-    # intercept ?open=...
+    # Intercept ?open=... untuk mencatat klik & langsung bersihkan URL
     params = _get_query_params()
     if "open" in params:
         raw   = params["open"][0] if isinstance(params["open"], list) else params["open"]
         raw_q = params.get("q", [""])[0] if isinstance(params.get("q", [""]), list) else params.get("q", "")
-        silent_flag = str(params.get("silent", ["0"])[0]).lower() in ("1","true","yes")
         url = _b64dec(raw); _ = _b64dec(raw_q)
         if url and (url not in S.clicked_urls_in_session):
             S.clicked_urls_in_session.append(url)
-        if silent_flag:
-            st.write("")  # respon minimal untuk fetch()
-            st.stop()
-        else:
-            components.html(
-                f"""
-                <script>
-                  try {{
-                    window.open("{url}", "_blank");
-                    const base = window.location.href.split("?")[0];
-                    window.history.replaceState({{}}, "", base);
-                  }} catch(e) {{}}
-                </script>
-                """,
-                height=0,
-            )
-            st.stop()
+        # Bersihkan query string supaya tidak mengganggu render normal
+        components.html(
+            """
+            <script>
+              try {
+                const base = window.location.href.split('?')[0];
+                window.history.replaceState({}, "", base);
+              } catch (e) {}
+            </script>
+            """,
+            height=0,
+        )
+        # TIDAK st.stop(); biarkan app lanjut render normal
 
     st.title("📰 Sistem Rekomendasi Berita")
-    st.markdown("Aplikasi ini merekomendasikan berita dari Detik, CNN Indonesia, dan Kompas berdasarkan riwayat topik. Waktu publikasi diambil langsung dari halaman artikel.")
+    st.markdown(
+        "Aplikasi ini merekomendasikan berita dari Detik, CNN Indonesia, dan Kompas "
+        "berdasarkan riwayat topik. Waktu publikasi diambil langsung dari halaman artikel."
+    )
 
-    # mount JS + CSS (tanpa teks counter klik)
+    # JS helper + CSS tombol
     mount_click_logger_js()
-    st.markdown("""
+    st.markdown(
+        """
         <style>
           .cta{
             background:#007bff;color:#fff;padding:10px 16px;border-radius:10px;
@@ -711,7 +725,9 @@ def main():
           .cta:hover{transform:translateY(-1px);box-shadow:0 6px 16px rgba(0,123,255,.35);opacity:.96}
           .cta:active{transform:translateY(0)}
         </style>
-    """, unsafe_allow_html=True)
+        """,
+        unsafe_allow_html=True,
+    )
 
     # sidebar
     if st.sidebar.button("Bersihkan Cache & Muat Ulang"):
@@ -721,7 +737,7 @@ def main():
     if S.history.empty:
         S.history = load_history_from_github()
 
-    # model personalisasi (opsional, aman dari error)
+    # model personalisasi (opsional)
     st.sidebar.header("Model Personalisasi")
     try:
         df_train = build_training_data(USER_ID)
@@ -739,6 +755,7 @@ def main():
     st.header("📚 Pencarian Berita per Tanggal")
     grouped_queries = get_recent_queries_by_days(USER_ID, S.history, days=3)
     if grouped_queries:
+        # render jika ada ganti topik; kalau belum, tampilkan judul expandernya saja
         should_refresh_per_tanggal = S.topic_change_counter > S.per_tanggal_done_counter
         for date, queries in grouped_queries.items():
             st.subheader(f"Tanggal {date}")
@@ -770,7 +787,7 @@ def main():
                                     st.markdown(make_logged_link(row["url"], q), unsafe_allow_html=True)
                                     st.markdown("---")
                     else:
-                        st.caption("Ganti topik pada kolom pencarian agar bagian ini memuat artikel terbaru.")
+                        st.caption("Ganti topik di kolom pencarian agar bagian ini memuat artikel terbaru.")
         if should_refresh_per_tanggal:
             S.per_tanggal_done_counter = S.topic_change_counter
     else:
@@ -817,12 +834,11 @@ def main():
     search_query = st.text_input("Ketik topik berita yang ingin Anda cari:", key="search_input")
     if st.button("Cari Berita"):
         if search_query:
-            # deteksi pergantian topik → trigger per tanggal
             is_topic_change = (S.current_query.strip().lower() != search_query.strip().lower()) and (S.current_query != "")
             if is_topic_change:
                 S.topic_change_counter += 1
 
-            # simpan interaksi pencarian sebelumnya
+            # simpan interaksi pencarian sebelumnya (klik dari sesi ini ikut tersimpan)
             if S.current_query:
                 save_interaction_to_github(
                     USER_ID,
