@@ -460,8 +460,8 @@ def scrape_kompas_fixed(query, max_articles=12):
                     real, content, title_html = fetch_time_content_title(sess, link)
                     if real: pub = real
                     if not pub: continue
-                    if not title or len(title) < 3:
-                        title = title_html or slug_to_title(link)
+                    if not title atau len(title) < 3:
+                        title = title_html atau slug_to_title(link)
                     if not is_relevant_strict(query, title, summary, content, link): continue
                     data.append({
                         "source":"Kompas","title":title,"description":summary,
@@ -527,69 +527,43 @@ def save_interaction_to_github(user_id, query, all_articles, clicked_urls):
     updated = json.dumps(history_list, indent=2, ensure_ascii=False)
     repo.update_file(st.secrets["file_path"], f"Update history for {query}", updated, contents.sha)
 
-# ========================= TRAIN & RECOMMEND =========================
-def build_training_data(user_id):
-    history_df = load_history_from_github()
-    user_data = [h for h in history_df.to_dict("records")
-                 if h.get("user_id")==user_id and "label" in h and h.get("title") and h.get("content")]
-    df = pd.DataFrame(user_data)
-    if df.empty or df["label"].nunique() < 2: return pd.DataFrame()
-    train, seen = [], set()
-    for _, row in df.iterrows():
-        text = preprocess_text(str(row.get("title",""))+" "+str(row.get("content","")))
-        label = int(row.get("label",0))
-        if text and text not in seen:
-            train.append({"text":text, "label":label}); seen.add(text)
-    return pd.DataFrame(train)
+# ========================= ANALITIK =========================
+def get_recent_queries_by_days(user_id, df, days=3):
+    if df.empty or "user_id" not in df.columns or "click_time" not in df.columns:
+        return {}
+    d = df[df["user_id"] == user_id].copy()
+    d = d.drop_duplicates(subset=["user_id","query","click_time"])
+    d["ts"] = pd.to_datetime(d["click_time"], format="%A, %d %B %Y %H:%M", errors="coerce")
+    d["ts"] = d["ts"].fillna(pd.to_datetime(d["click_time"], errors="coerce"))
+    d = d.dropna(subset=["ts"])
+    now = datetime.now()
+    cutoff = now - timedelta(days=days)
+    d = d[d["ts"] >= cutoff]
+    if d.empty: return {}
+    d["date"] = d["ts"].dt.strftime("%d %B %Y")
+    grouped = d.groupby("date")["query"].unique().to_dict()
+    sorted_dates = sorted(grouped.keys(), key=lambda x: datetime.strptime(x, "%d %B %Y"), reverse=True)
+    return {k: grouped[k] for k in sorted_dates}
 
-@st.cache_resource(show_spinner="Melatih model rekomendasi...")
-def train_model(df_train):
-    X = model_sbert.encode(df_train["text"].tolist())
-    y = df_train["label"].tolist()
-    if len(set(y)) < 2:
-        st.warning("⚠️ Gagal melatih model: hanya ada satu jenis label.")
-        return None
-    X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.3, random_state=42)
-    clf = LogisticRegression(class_weight="balanced", max_iter=1000)
-    clf.fit(X_train, y_train)
-    y_pred = clf.predict(X_test)
-    st.sidebar.markdown("📊 **Evaluasi Model:**")
-    st.sidebar.write(f"- Akurasi: {accuracy_score(y_test, y_pred):.2f}")
-    st.sidebar.write(f"- Presisi: {precision_score(y_test, y_pred):.2f}")
-    st.sidebar.write(f"- Recall: {recall_score(y_test, y_pred):.2f}")
-    st.sidebar.write(f"- Score F1: {f1_score(y_test, y_pred):.2f}")
-    return clf
-
-def recommend(df, query, clf, n_per_source=3, min_score=0.55,
-              ensure_all_sources=False, use_lr_boost=True, alpha=0.25,
-              per_source_group=True):
-    if df.empty: return pd.DataFrame()
-    df = df.copy().drop_duplicates(subset=["url"])
-    df["processed"] = df.apply(lambda r: preprocess_text(
-        f"{r.get('title','')} {r.get('description','')} {r.get('content','')}"
-    ), axis=1)
-    art_vecs = model_sbert.encode(df["processed"].tolist())
-    df["publishedAt_dt"] = pd.to_datetime(df["publishedAt"], errors="coerce")
-    df = df.dropna(subset=["publishedAt_dt"])
-    if df.empty: return pd.DataFrame()
-    q_vec = model_sbert.encode([preprocess_text(query)])
-    sims = cosine_similarity(q_vec, art_vecs[:len(df)])[0]
-    s_min, s_max = float(sims.min()), float(sims.max())
-    sbert_score = (sims - s_min) / (s_max - s_min) if s_max > s_min else sims
-    df["sbert_score"] = sbert_score
-    if clf is not None and use_lr_boost:
-        lr_score = clf.predict_proba(art_vecs[:len(df)])[:, 1]
-        bonus = df["title"].apply(lambda t: 0.05 if (t and query.lower() in t.lower()) else 0).values
-        final = ((1 - alpha) * df["sbert_score"].values) + (alpha * lr_score) + bonus
-    else:
-        final = df["sbert_score"].values
-    df["final_score"] = final.clip(0, 1)
-    filtered = df[df["final_score"] >= min_score].copy()
-    if filtered.empty: filtered = df.copy()
-    def _top_n(x): return x.sort_values(["publishedAt_dt","final_score"], ascending=[False, False]).head(n_per_source)
-    got = filtered.groupby("source", group_keys=False).apply(_top_n, include_groups=False) if per_source_group \
-          else filtered.sort_values(["publishedAt_dt","final_score"], ascending=[False, False]).head(3*n_per_source)
-    return got.sort_values(["publishedAt_dt","final_score"], ascending=[False, False]).reset_index(drop=True)
+def trending_by_query_frequency(user_id, df, days=3):
+    if df.empty or "user_id" not in df.columns or "query" not in df.columns or "click_time" not in df.columns:
+        return []
+    d = df[df["user_id"] == user_id].copy()
+    d = d.drop_duplicates(subset=["user_id","query","click_time"])
+    d["ts"] = pd.to_datetime(d["click_time"], format="%A, %d %B %Y %H:%M", errors="coerce")
+    d["ts"] = d["ts"].fillna(pd.to_datetime(d["click_time"], errors="coerce"))
+    d = d.dropna(subset=["ts"])
+    now = datetime.now()
+    cutoff = now - timedelta(days=days)
+    d = d[d["ts"] >= cutoff]
+    if d.empty: return []
+    agg = d.groupby("query").agg(
+        total=("query","count"),
+        days=("ts", lambda s: s.dt.date.nunique()),
+        last_ts=("ts","max")
+    ).reset_index()
+    agg = agg.sort_values(by=["days","total","last_ts"], ascending=[False, False, False])
+    return list(agg[["query","total"]].itertuples(index=False, name=None))
 
 # ========================= LINK LOGGING (SMOOTH) =========================
 def _b64enc(s):
@@ -639,7 +613,7 @@ def main():
         raw   = params["open"][0] if isinstance(params["open"], list) else params["open"]
         raw_q = params.get("q", [""])[0] if isinstance(params.get("q", [""]), list) else params.get("q", "")
         silent_flag = str(params.get("silent", ["0"])[0]).lower() in ("1","true","yes")
-        url = _b64dec(raw); qx = _b64dec(raw_q)
+        url = _b64dec(raw); _ = _b64dec(raw_q)  # q tidak dipakai di sini
         if url and (url not in state.clicked_urls_in_session):
             state.clicked_urls_in_session.append(url)
         if silent_flag:
@@ -738,6 +712,9 @@ def main():
                                     st.markdown("---")
                     else:
                         st.caption("Ganti topik di kolom pencarian agar bagian ini memuat artikel terbaru.")
+        # setelah sekali muat pasca ganti topik, matikan trigger
+        if state.history_refresh_trigger:
+            state.history_refresh_trigger = False
     else:
         st.info("Belum ada riwayat pencarian pada 3 hari terakhir.")
 
@@ -829,12 +806,6 @@ def main():
                 st.write(f"Skor: `{float(skor):.2f}`")
                 st.markdown(make_logged_link(row["url"], state.current_query), unsafe_allow_html=True)
                 st.markdown("---")
-
-        # info jumlah klik — cuma di bagian hasil pencarian
-        st.info(
-            f"Klik tercatat sesi ini: {len(state.clicked_urls_in_session)}. "
-            "Data akan disimpan saat Anda memulai pencarian baru."
-        )
 
 if __name__ == "__main__":
     main()
