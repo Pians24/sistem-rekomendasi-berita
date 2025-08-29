@@ -768,13 +768,13 @@ def main():
                         else:
                             for _, row in results_latest.iterrows():
                                 src = get_source_from_url(row["url"])
-                                st.markdown(f"**[{src}]** {row['title']}")
-                                st.markdown(f"[{row['url']}]({row['url']})")
+                                # judul langsung bisa diklik, tidak ada tombol
+                                st.markdown(f"**[{src}]** [{row['title']}]({row['url']})")
                                 st.write(f"Waktu Publikasi: *{format_display_time(row.get('publishedAt',''))}*")
                                 skor = row.get("final_score", row.get("sbert_score", 0.0))
                                 st.write(f"Skor: `{float(skor):.2f}`")
-                                st.markdown(make_logged_link(row["url"], q), unsafe_allow_html=True)
                                 st.markdown("---")
+
     else:
         st.info("Belum ada riwayat pencarian pada 3 hari terakhir.")
 
