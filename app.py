@@ -751,47 +751,45 @@ def main():
     else:
         st.sidebar.info("Model belum bisa dilatih karena riwayat tidak mencukupi.")
 
-    # ================= PENCARIAN PER TANGGAL =================
-    st.header("📚 Pencarian Berita per Tanggal")
-    grouped_queries = get_recent_queries_by_days(USER_ID, S.history, days=3)
-    if grouped_queries:
-        # render jika ada ganti topik; kalau belum, tampilkan judul expandernya saja
-        should_refresh_per_tanggal = S.topic_change_counter > S.per_tanggal_done_counter
-        for date, queries in grouped_queries.items():
-            st.subheader(f"Tanggal {date}")
-            for q in sorted(set(queries)):
-                with st.expander(f"- {q}", expanded=False):
-                    if should_refresh_per_tanggal:
-                        with st.spinner("Mengambil berita terbaru dari 3 sumber..."):
-                            df_latest = scrape_all_sources(q)
-                        if df_latest.empty:
-                            st.info("❗ Tidak ditemukan berita terbaru untuk topik ini.")
-                        else:
-                            results_latest = recommend(
-                                df_latest, q, clf,
-                                n_per_source=3,
-                                min_score=DEFAULT_MIN_SCORE,
-                                use_lr_boost=USE_LR_BOOST, alpha=ALPHA,
-                                per_source_group=PER_SOURCE_GROUP,
-                            )
-                            if results_latest.empty:
-                                st.info("❗ Tidak ada hasil relevan dari portal untuk topik ini.")
-                            else:
-                                for _, row in results_latest.iterrows():
-                                    src = get_source_from_url(row["url"])
-                                    st.markdown(f"**[{src}]** {row['title']}")
-                                    st.markdown(f"[{row['url']}]({row['url']})")
-                                    st.write(f"Waktu Publikasi: *{format_display_time(row.get('publishedAt',''))}*")
-                                    skor = row.get("final_score", row.get("sbert_score", 0.0))
-                                    st.write(f"Skor: `{float(skor):.2f}`")
-                                    st.markdown(make_logged_link(row["url"], q), unsafe_allow_html=True)
-                                    st.markdown("---")
+# ================= PENCARIAN PER TANGGAL (AUTO LOAD) =================
+st.header("📚 Pencarian Berita per Tanggal")
+grouped_queries = get_recent_queries_by_days(USER_ID, S.history, days=3)
+
+if grouped_queries:
+    # auto-load semua topik dan langsung tampilkan artikelnya
+    for date, queries in grouped_queries.items():
+        st.subheader(f"Tanggal {date}")
+        for q in sorted(set(queries)):
+            with st.expander(f"- {q}", expanded=True):
+                with st.spinner("Mengambil berita terbaru dari 3 sumber..."):
+                    df_latest = scrape_all_sources(q)
+
+                if df_latest.empty:
+                    st.info("❗ Tidak ditemukan berita terbaru untuk topik ini.")
+                else:
+                    results_latest = recommend(
+                        df_latest, q, clf,
+                        n_per_source=3,
+                        min_score=DEFAULT_MIN_SCORE,
+                        use_lr_boost=USE_LR_BOOST, alpha=ALPHA,
+                        per_source_group=PER_SOURCE_GROUP,
+                    )
+                    if results_latest.empty:
+                        st.info("❗ Tidak ada hasil relevan dari portal untuk topik ini.")
                     else:
-                        st.caption("Ganti topik di kolom pencarian agar bagian ini memuat artikel terbaru.")
-        if should_refresh_per_tanggal:
-            S.per_tanggal_done_counter = S.topic_change_counter
-    else:
-        st.info("Belum ada riwayat pencarian pada 3 hari terakhir.")
+                        for _, row in results_latest.iterrows():
+                            src = get_source_from_url(row["url"])
+                            st.markdown(f"**[{src}]** {row['title']}")
+                            st.markdown(f"[{row['url']}]({row['url']})")
+                            st.write(f"Waktu Publikasi: *{format_display_time(row.get('publishedAt',''))}*")
+                            skor = row.get("final_score", row.get("sbert_score", 0.0))
+                            st.write(f"Skor: `{float(skor):.2f}`")
+                            # link sudah auto-log klik dan buka tab baru
+                            st.markdown(make_logged_link(row["url"], q), unsafe_allow_html=True)
+                            st.markdown("---")
+else:
+    st.info("Belum ada riwayat pencarian pada 3 hari terakhir.")
+
 
     st.markdown("---")
 
