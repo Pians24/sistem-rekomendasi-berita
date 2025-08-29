@@ -20,10 +20,11 @@ st.set_page_config(page_title="Sistem Rekomendasi Berita", layout="wide")
 USER_ID = "user_01"
 TZ_JKT = pytz.timezone("Asia/Jakarta")
 
-DEFAULT_MIN_SCORE = 0.55
+DEFAULT_MIN_SCORE = 0.50          # diturunkan agar recall lebih inklusif
 USE_LR_BOOST = True
 ALPHA = 0.25
 PER_SOURCE_GROUP = True
+DESIRED_SOURCES = ["Detik", "CNN", "Kompas"]  # dipakai untuk 'ensure_all_sources'
 
 S = st.session_state
 for k, v in {
@@ -87,9 +88,17 @@ def _keywords(tokens_min3, hay): return sum(tok in hay for tok in tokens_min3)
 def is_relevant_strict(query, title, summary, content, url):
     q = preprocess_text(query)
     hay = preprocess_text(" ".join([title or "", summary or "", content or "", url or ""]))
-    if len(q.split()) >= 2 and q in hay: return True
+
+    # match frasa utuh (untuk kueri ≥2 kata)
+    if len(q.split()) >= 2 and q in hay:
+        return True
+
+    # token minimal 3 huruf
     toks = [t for t in re.findall(r"\w+", q) if len(t) >= 3]
-    return _keywords(toks, hay) >= 2
+
+    # RELAKSASI: kalau kueri ≤ 2 kata, cukup 1 token yang match; kalau lebih panjang, butuh ≥2
+    required = 1 if len(q.split()) <= 2 else 2
+    return _keywords(toks, hay) >= required
 
 def _keywords_ok(title, summary, query):
     q = preprocess_text(query)
@@ -166,22 +175,27 @@ def _normalize_to_jakarta(dt_str):
 def _parse_id_date_text(text):
     if not text: return ""
     t = text.strip()
+    # 12/08/2025 14:30
     m0 = re.search(r"(\d{2})/(\d{2})/(\d{4})[, ]+(\d{2}):(\d{2})", t)
     if m0:
         dd, mm, yyyy, hh, mi = m0.groups()
         return _normalize_to_jakarta(f"{yyyy}-{mm}-{dd} {hh}:{mi}")
+    # Senin, 12 Agu 2025 14:30
     bulan_map = {"Jan":"01","Feb":"02","Mar":"03","Apr":"04","Mei":"05","Jun":"06","Jul":"07","Agu":"08","Sep":"09","Okt":"10","Nov":"11","Des":"12"}
     m1 = re.search(r"(Senin|Selasa|Rabu|Kamis|Jumat|Sabtu|Minggu)\s*,\s*(\d{1,2})\s+(Jan|Feb|Mar|Apr|Mei|Jun|Jul|Agu|Sep|Okt|Nov|Des)\s+(\d{4})\s+(\d{2}:\d{2})", t, flags=re.IGNORECASE)
     if m1:
         _, dd, mon, yyyy, hhmm = m1.groups()
         mm = bulan_map.get(mon[:3].title(), "00")
         if mm != "00": return _normalize_to_jakarta(f"{yyyy}-{mm}-{int(dd):02d} {hhmm}")
+    # Senin, 12/08/2025 14:30
     m2 = re.search(r"(Senin|Selasa|Rabu|Kamis|Jumat|Sabtu|Minggu)\s*,\s*(\d{2})/(\d{2})/(\d{4})\s+(\d{2}:\d{2})", t, flags=re.IGNORECASE)
     if m2:
         _, dd, mm, yyyy, hhmm = m2.groups()
         return _normalize_to_jakarta(f"{yyyy}-{mm}-{dd} {hhmm}")
+    # ISO
     m3 = re.search(r"(\d{4}-\d{2}-\d{2}[ T]\d{2}:\d{2}(?::\d{2})?(?:Z|[+\-]\d{2}:?\d{2})?)", t)
     if m3: return _normalize_to_jakarta(m3.group(1))
+    # relatif
     m4 = re.search(r"(\d+)\s+(menit|jam|hari|minggu)\s+yang\s+lalu", t, flags=re.IGNORECASE)
     if m4:
         jumlah = int(m4.group(1)); unit = m4.group(2).lower()
@@ -457,8 +471,8 @@ def scrape_kompas_fixed(query, max_articles=12):
                     real, content, title_html = fetch_time_content_title(sess, link)
                     if real: pub = real
                     if not pub: continue
-                    if not title or len(title) < 3:
-                        title = title_html or slug_to_title(link)
+                    if not title atau len(title) < 3:
+                        title = title_html atau slug_to_title(link)
                     if not is_relevant_strict(query, title, summary, content, link): continue
                     data.append({
                         "source":"Kompas","title":title,"description":summary,
@@ -601,32 +615,72 @@ def train_model(df_train):
 def recommend(df, query, clf, n_per_source=3, min_score=0.55,
               ensure_all_sources=False, use_lr_boost=True, alpha=0.25,
               per_source_group=True):
-    if df.empty: return pd.DataFrame()
+    if df.empty:
+        return pd.DataFrame()
+
     df = df.copy().drop_duplicates(subset=["url"])
+
+    # siapkan teks & vektor
     df["processed"] = df.apply(lambda r: preprocess_text(
         f"{r.get('title','')} {r.get('description','')} {r.get('content','')}"
     ), axis=1)
     art_vecs = model_sbert.encode(df["processed"].tolist())
+
+    # waktu harus valid
     df["publishedAt_dt"] = pd.to_datetime(df["publishedAt"], errors="coerce")
     df = df.dropna(subset=["publishedAt_dt"])
-    if df.empty: return pd.DataFrame()
+    if df.empty:
+        return pd.DataFrame()
+
+    # skor SBERT terhadap query
     q_vec = model_sbert.encode([preprocess_text(query)])
     sims = cosine_similarity(q_vec, art_vecs[:len(df)])[0]
     s_min, s_max = float(sims.min()), float(sims.max())
     sbert_score = (sims - s_min) / (s_max - s_min) if s_max > s_min else sims
     df["sbert_score"] = sbert_score
+
+    # booster LR
     if clf is not None and use_lr_boost:
         lr_score = clf.predict_proba(art_vecs[:len(df)])[:, 1]
         bonus = df["title"].apply(lambda t: 0.05 if (t and query.lower() in t.lower()) else 0).values
         final = ((1 - alpha) * df["sbert_score"].values) + (alpha * lr_score) + bonus
     else:
         final = df["sbert_score"].values
+
     df["final_score"] = final.clip(0, 1)
+
+    # filter ambang skor
     filtered = df[df["final_score"] >= min_score].copy()
-    if filtered.empty: filtered = df.copy()
-    def _top_n(x): return x.sort_values(["publishedAt_dt","final_score"], ascending=[False, False]).head(n_per_source)
-    got = filtered.groupby("source", group_keys=False).apply(_top_n, include_groups=False) if per_source_group \
-          else filtered.sort_values(["publishedAt_dt","final_score"], ascending=[False, False]).head(3*n_per_source)
+    if filtered.empty:
+        filtered = df.copy()
+
+    # top-N per sumber atau global
+    def _top_n(x):
+        return x.sort_values(["publishedAt_dt","final_score"], ascending=[False, False]).head(n_per_source)
+
+    if per_source_group:
+        got = filtered.groupby("source", group_keys=False).apply(_top_n)
+    else:
+        got = filtered.sort_values(["publishedAt_dt","final_score"], ascending=[False, False]).head(3*n_per_source)
+
+    # jamin tiap sumber kebagian minimal 1 (kalau ada kandidat)
+    if ensure_all_sources:
+        present = set(got["source"].dropna()) if not got.empty else set()
+        for s in DESIRED_SOURCES:
+            if s not in present:
+                cand = df[df["source"] == s]
+                if not cand.empty:
+                    pick = cand.sort_values(["publishedAt_dt","final_score"], ascending=[False, False]).head(1)
+                    got = pd.concat([got, pick], ignore_index=True)
+
+        # enforce quota n_per_source dan dedup
+        if per_source_group and not got.empty:
+            got = (got.sort_values(["publishedAt_dt","final_score"], ascending=[False, False])
+                      .groupby("source", group_keys=False)
+                      .head(n_per_source))
+        got = got.drop_duplicates(subset=["url"])
+
+    # urut final
     return got.sort_values(["publishedAt_dt","final_score"], ascending=[False, False]).reset_index(drop=True)
 
 # ========================= LINK LOGGING =========================
@@ -760,6 +814,7 @@ def main():
                             df_latest, q, clf,
                             n_per_source=3,
                             min_score=DEFAULT_MIN_SCORE,
+                            ensure_all_sources=True,          # <-- jamin Detik/CNN/Kompas kebagian
                             use_lr_boost=USE_LR_BOOST, alpha=ALPHA,
                             per_source_group=PER_SOURCE_GROUP,
                         )
@@ -768,8 +823,14 @@ def main():
                         else:
                             for _, row in results_latest.iterrows():
                                 src = get_source_from_url(row["url"])
-                                # judul langsung bisa diklik, tidak ada tombol
-                                st.markdown(f"**[{src}]** [{row['title']}]({row['url']})")
+                                # Judul langsung bisa diklik (bukan tombol), tetap logging via JS
+                                st.markdown(
+                                    f'<a href="{row["url"]}" target="_blank" rel="noopener" '
+                                    f'onclick="return logAndOpenRaw(\'{row["url"]}\', '
+                                    f'\'{_b64enc(row["url"])}\', \'{_b64enc(q)}\');">'
+                                    f'<strong>[{src}]</strong> {row["title"]}</a>',
+                                    unsafe_allow_html=True
+                                )
                                 st.write(f"Waktu Publikasi: *{format_display_time(row.get('publishedAt',''))}*")
                                 skor = row.get("final_score", row.get("sbert_score", 0.0))
                                 st.write(f"Skor: `{float(skor):.2f}`")
@@ -794,6 +855,7 @@ def main():
                 df_news, q_top, clf,
                 n_per_source=1,
                 min_score=DEFAULT_MIN_SCORE,
+                ensure_all_sources=True,              # opsional: ikut dipaksa 1/sumber
                 use_lr_boost=USE_LR_BOOST, alpha=ALPHA,
                 per_source_group=PER_SOURCE_GROUP,
             )
@@ -840,6 +902,7 @@ def main():
                     search_query, clf,
                     n_per_source=3,
                     min_score=DEFAULT_MIN_SCORE,
+                    ensure_all_sources=True,          # opsional: ikut dipaksa 1/sumber
                     use_lr_boost=USE_LR_BOOST, alpha=ALPHA,
                     per_source_group=PER_SOURCE_GROUP,
                 )
