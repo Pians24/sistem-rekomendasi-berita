@@ -12,6 +12,7 @@ from sklearn.metrics import accuracy_score, precision_score, recall_score, f1_sc
 from sklearn.metrics.pairwise import cosine_similarity
 from sentence_transformers import SentenceTransformer
 from github import Github
+import streamlit.components.v1 as components  # <-- penting untuk JS logger
 
 # ========================= KONFIG & STATE =========================
 st.set_page_config(page_title="Sistem Rekomendasi Berita", layout="wide")
@@ -22,7 +23,7 @@ TZ_JKT = pytz.timezone("Asia/Jakarta")
 DEFAULT_MIN_SCORE = 0.55
 USE_LR_BOOST = True
 ALPHA = 0.25
-PER_SOURCE_GROUP = True  # True=ranking per sumber
+PER_SOURCE_GROUP = True
 
 if "history" not in st.session_state: st.session_state.history = pd.DataFrame()
 if "current_search_results" not in st.session_state: st.session_state.current_search_results = pd.DataFrame()
@@ -102,7 +103,6 @@ def slug_to_title(url: str) -> str:
         path = urllib.parse.urlparse(url).path or ""
         parts = [p for p in path.split("/") if p]
         seg = parts[-1] if parts else ""
-        # Detik sering /d-<id>/<judul-slug>
         for i, p in enumerate(parts):
             if p.startswith("d-") and i + 1 < len(parts):
                 seg = parts[i + 1]; break
@@ -162,11 +162,11 @@ def _parse_id_date_text(text):
     if m0:
         dd, mm, yyyy, hh, mi = m0.groups()
         return _normalize_to_jakarta(f"{yyyy}-{mm}-{dd} {hh}:{mi}")
-    bulan_map = {"Jan":"01","Feb":"02","Mar":"03","Apr":"04","Mei":"05","Jun":"06","Jul":"07","Agu":"08","Sep":"09","Okt":"10","Nov":"11","Des":"12"}
+    bulan_map = {"Jan":"01","Feb":"02","Mar":"03","Apr":"04","Mei":"05","Jun":"06","Jul":"07","Agu":"08","Sep":"09","Okt":"10","Des":"12","Nov":"11"}
     m1 = re.search(r"(Senin|Selasa|Rabu|Kamis|Jumat|Sabtu|Minggu)\s*,\s*(\d{1,2})\s+(Jan|Feb|Mar|Apr|Mei|Jun|Jul|Agu|Sep|Okt|Nov|Des)\s+(\d{4})\s+(\d{2}:\d{2})", t, flags=re.IGNORECASE)
     if m1:
         _, dd, mon, yyyy, hhmm = m1.groups()
-        mm = bulan_map.get(mon[:3].title(), "00")
+        mm = {"Jan":"01","Feb":"02","Mar":"03","Apr":"04","Mei":"05","Jun":"06","Jul":"07","Agu":"08","Sep":"09","Okt":"10","Nov":"11","Des":"12"}.get(mon[:3].title(),"00")
         if mm != "00": return _normalize_to_jakarta(f"{yyyy}-{mm}-{int(dd):02d} {hhmm}")
     m2 = re.search(r"(Senin|Selasa|Rabu|Kamis|Jumat|Sabtu|Minggu)\s*,\s*(\d{2})/(\d{2})/(\d{4})\s+(\d{2}:\d{2})", t, flags=re.IGNORECASE)
     if m2:
@@ -509,7 +509,7 @@ def save_interaction_to_github(user_id, query, all_articles, clicked_urls):
             "url": str(row.get("url","")),
             "content": str(row.get("content","")),
             "source": str(row.get("source","")),
-            "click_time": now,  # event pencarian
+            "click_time": now,
             "publishedAt": row.get("publishedAt",""),
             "label": 1 if row.get("url","") in clicked_urls else 0
         })
@@ -521,7 +521,6 @@ def get_recent_queries_by_days(user_id, df, days=3):
     if df.empty or "user_id" not in df.columns or "click_time" not in df.columns:
         return {}
     d = df[df["user_id"] == user_id].copy()
-    # dedupe per event pencarian (banyak baris per artikel → jadikan 1 event)
     d = d.drop_duplicates(subset=["user_id","query","click_time"])
     d["ts"] = pd.to_datetime(d["click_time"], format="%A, %d %B %Y %H:%M", errors="coerce")
     d["ts"] = d["ts"].fillna(pd.to_datetime(d["click_time"], errors="coerce"))
@@ -539,7 +538,7 @@ def trending_by_query_frequency(user_id, df, days=3):
     if df.empty or "user_id" not in df.columns or "query" not in df.columns or "click_time" not in df.columns:
         return []
     d = df[df["user_id"] == user_id].copy()
-    d = d.drop_duplicates(subset=["user_id","query","click_time"])  # hitung frekuensi pencarian, bukan jumlah artikel
+    d = d.drop_duplicates(subset=["user_id","query","click_time"])
     d["ts"] = pd.to_datetime(d["click_time"], format="%A, %d %B %Y %H:%M", errors="coerce")
     d["ts"] = d["ts"].fillna(pd.to_datetime(d["click_time"], errors="coerce"))
     d = d.dropna(subset=["ts"])
@@ -619,7 +618,7 @@ def recommend(df, query, clf, n_per_source=3, min_score=0.55,
           else filtered.sort_values(["publishedAt_dt","final_score"], ascending=[False, False]).head(3*n_per_source)
     return got.sort_values(["publishedAt_dt","final_score"], ascending=[False, False]).reset_index(drop=True)
 
-# ========================= LINK LOGGING =========================
+# ========================= LINK LOGGING (SMOOTH) =========================
 def _b64enc(s): 
     try: return base64.urlsafe_b64encode((s or "").encode()).decode()
     except Exception: return ""
@@ -628,39 +627,73 @@ def _b64dec(s):
     except Exception: return ""
 
 def make_logged_link(url, query, label="Baca selengkapnya"):
-    qs = urllib.parse.urlencode({"open": _b64enc(url), "q": _b64enc(query)})
-    return f'<a class="cta" href="?{qs}" target="_self" rel="nofollow">{label}</a>'
+    # langsung ke artikel; logging via JS tanpa reload
+    return (
+        f'<a class="cta" href="{url}" target="_blank" rel="noopener" '
+        f'onclick="logClick(\'{_b64enc(url)}\', \'{_b64enc(query)}\');return true;">'
+        f'{label}</a>'
+    )
 
 def _get_query_params():
     try:
-        return st.query_params  # Streamlit >= 1.38
+        return st.query_params
     except Exception:
         return st.experimental_get_query_params()
 
+def mount_click_logger_js():
+    components.html(
+        """
+        <script>
+          window.logClick = (b64url, b64q) => {
+            try {
+              const base = window.location.href.split('#')[0];
+              const u = new URL(base);
+              u.searchParams.set('open', b64url);
+              u.searchParams.set('q', b64q);
+              u.searchParams.set('silent', '1');
+              fetch(u.toString(), { method:'GET', credentials:'same-origin', cache:'no-store' }).catch(()=>{});
+              const el = parent.document.querySelector('#click-counter b');
+              if (el) {
+                const cur = parseInt(el.textContent || '0', 10) || 0;
+                el.textContent = cur + 1;
+              }
+            } catch (e) {}
+          };
+        </script>
+        """,
+        height=0,
+    )
+
 # ========================= APP =========================
 def main():
-    # --- intercept: buka tab artikel + catat klik lewat ?open= ---
+    # --- handler ?open=... (mode senyap & fallback lama) ---
     params = _get_query_params()
     if "open" in params:
-        raw = params["open"][0] if isinstance(params["open"], list) else params["open"]
+        raw   = params["open"][0] if isinstance(params["open"], list) else params["open"]
         raw_q = params.get("q", [""])[0] if isinstance(params.get("q", [""]), list) else params.get("q", "")
-        url = _b64dec(raw)
-        qx = _b64dec(raw_q)
+        silent_flag = str(params.get("silent", ["0"])[0]).lower() in ("1","true","yes")
+        url = _b64dec(raw); qx = _b64dec(raw_q)
+
         if url and (url not in st.session_state.clicked_urls_in_session):
             st.session_state.clicked_urls_in_session.append(url)
-        st.components.v1.html(
-            f"""
-            <script>
-              try {{
-                window.open("{url}", "_blank");
-                const base = window.location.href.split("?")[0];
-                window.history.replaceState({{}}, "", base);
-              }} catch(e) {{}}
-            </script>
-            """,
-            height=0,
-        )
-        st.stop()
+
+        if silent_flag:
+            st.write("")   # respon minimal untuk fetch()
+            st.stop()
+        else:
+            components.html(
+                f"""
+                <script>
+                  try {{
+                    window.open("{url}", "_blank");
+                    const base = window.location.href.split("?")[0];
+                    window.history.replaceState({{}}, "", base);
+                  }} catch(e) {{}}
+                </script>
+                """,
+                height=0,
+            )
+            st.stop()
 
     # --- header ---
     st.title("📰 Sistem Rekomendasi Berita")
@@ -669,19 +702,37 @@ def main():
         "berdasarkan riwayat topik Anda. Waktu publikasi diambil langsung dari halaman artikel."
     )
 
+    # logger JS + CSS tombol + counter klik (di atas supaya selalu kelihatan)
+    mount_click_logger_js()
+    st.markdown(
+        """
+        <style>
+          .cta{
+            background:#007bff;color:#fff;padding:10px 16px;border-radius:10px;
+            text-decoration:none;display:inline-flex;align-items:center;gap:8px;font-weight:600;
+            box-shadow:0 4px 12px rgba(0,123,255,.25);transition:transform .06s ease, box-shadow .2s ease, opacity .2s;
+          }
+          .cta:hover{transform:translateY(-1px);box-shadow:0 6px 16px rgba(0,123,255,.35);opacity:.96}
+          .cta:active{transform:translateY(0)}
+        </style>
+        """,
+        unsafe_allow_html=True,
+    )
+    st.markdown(
+        f'<div id="click-counter" style="margin:.25rem 0 1rem 0;">Klik tercatat sesi ini: <b>{len(st.session_state.clicked_urls_in_session)}</b></div>',
+        unsafe_allow_html=True,
+    )
+
     # --- sidebar utility ---
     if st.sidebar.button("Bersihkan Cache & Muat Ulang"):
-        st.cache_data.clear()
-        st.cache_resource.clear()
-        st.success("Cache dibersihkan. Memuat ulang…")
-        time.sleep(1)
-        st.rerun()
+        st.cache_data.clear(); st.cache_resource.clear()
+        st.success("Cache dibersihkan. Memuat ulang…"); time.sleep(1); st.rerun()
 
-    # --- load history (sekali di awal) ---
+    # --- load history ---
     if st.session_state.history.empty:
         st.session_state.history = load_history_from_github()
 
-    # --- model personalisasi (opsional, kalau riwayat mencukupi) ---
+    # --- model personalisasi (opsional) ---
     st.sidebar.header("Model Personalisasi")
     df_train = build_training_data(USER_ID)
     clf = None
@@ -690,34 +741,6 @@ def main():
         clf = train_model(df_train)
     else:
         st.sidebar.info("Model belum bisa dilatih karena riwayat tidak mencukupi.")
-
-    # --- CSS tombol seragam biru ---
-    st.markdown(
-        """
-        <style>
-          .cta{
-            background:#007bff;
-            color:#fff;
-            padding:10px 16px;
-            border-radius:10px;
-            text-decoration:none;
-            display:inline-flex;
-            align-items:center;
-            gap:8px;
-            font-weight:600;
-            box-shadow:0 4px 12px rgba(0,123,255,.25);
-            transition:transform .06s ease, box-shadow .2s ease, opacity .2s;
-          }
-          .cta:hover{
-            transform:translateY(-1px);
-            box-shadow:0 6px 16px rgba(0,123,255,.35);
-            opacity:.96;
-          }
-          .cta:active{ transform:translateY(0); }
-        </style>
-        """,
-        unsafe_allow_html=True,
-    )
 
     # ================= PENCARIAN BERITA PER TANGGAL =================
     st.header("📚 Pencarian Berita per Tanggal")
@@ -729,25 +752,17 @@ def main():
                 with st.expander(f"- {q}", expanded=False):
                     with st.spinner("Mengambil berita terbaru dari 3 sumber..."):
                         df_latest = scrape_all_sources(q)
-
                     if df_latest.empty:
-                        st.info("❗ Tidak ditemukan berita terbaru untuk topik ini.")
-                        continue
-
+                        st.info("❗ Tidak ditemukan berita terbaru untuk topik ini."); continue
                     results_latest = recommend(
-                        df_latest,
-                        q,
-                        clf,
+                        df_latest, q, clf,
                         n_per_source=3,
                         min_score=DEFAULT_MIN_SCORE,
-                        use_lr_boost=USE_LR_BOOST,
-                        alpha=ALPHA,
+                        use_lr_boost=USE_LR_BOOST, alpha=ALPHA,
                         per_source_group=PER_SOURCE_GROUP,
                     )
                     if results_latest.empty:
-                        st.info("❗ Tidak ada hasil relevan dari portal untuk topik ini.")
-                        continue
-
+                        st.info("❗ Tidak ada hasil relevan dari portal untuk topik ini."); continue
                     for _, row in results_latest.iterrows():
                         src = get_source_from_url(row["url"])
                         st.markdown(f"**[{src}]** {row['title']}")
@@ -768,18 +783,14 @@ def main():
         q_top, _ = trends[0]
         with st.spinner("Mencari berita..."):
             df_news = scrape_all_sources(q_top)
-
         if df_news.empty:
             st.info("❗ Tidak ditemukan berita.")
         else:
             results = recommend(
-                df_news,
-                q_top,
-                clf,
+                df_news, q_top, clf,
                 n_per_source=1,
                 min_score=DEFAULT_MIN_SCORE,
-                use_lr_boost=USE_LR_BOOST,
-                alpha=ALPHA,
+                use_lr_boost=USE_LR_BOOST, alpha=ALPHA,
                 per_source_group=PER_SOURCE_GROUP,
             )
             if results.empty:
@@ -818,12 +829,10 @@ def main():
                 st.session_state.current_search_results = scrape_all_sources(search_query)
                 results = recommend(
                     st.session_state.current_search_results,
-                    search_query,
-                    clf,
+                    search_query, clf,
                     n_per_source=3,
                     min_score=DEFAULT_MIN_SCORE,
-                    use_lr_boost=USE_LR_BOOST,
-                    alpha=ALPHA,
+                    use_lr_boost=USE_LR_BOOST, alpha=ALPHA,
                     per_source_group=PER_SOURCE_GROUP,
                 )
                 st.session_state.current_recommended_results = results
@@ -850,12 +859,11 @@ def main():
                 st.markdown(make_logged_link(row["url"], st.session_state.current_query), unsafe_allow_html=True)
                 st.markdown("---")
 
-        if st.session_state.current_query:
-            st.info(
-                f"Anda telah mencatat {len(st.session_state.clicked_urls_in_session)} klik artikel. "
-                "Data akan disimpan saat Anda memulai pencarian baru."
-            )
+        # info + masih sinkron dengan counter di atas
+        st.info(
+            f"Klik tercatat sesi ini: {len(st.session_state.clicked_urls_in_session)}. "
+            "Data akan disimpan saat Anda memulai pencarian baru."
+        )
 
 if __name__ == "__main__":
     main()
-
