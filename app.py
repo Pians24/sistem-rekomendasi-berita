@@ -32,12 +32,11 @@ for k, v in {
     "show_results": False,
     "current_query": "",
     "current_recommended_results": pd.DataFrame(),
-    # logging klik per-kueri
-    "clicked_by_query": {},                # {query_str: set([url, ...])}
-    # simpan cohort "Rekomendasi Hari Ini" terakhir
-    "trending_results_df": pd.DataFrame(), # df hasil rekomendasi hari ini
-    "trending_query": "",                  # query yg dipakai rekomendasi hari ini
-    # pemicu stabil (kalau mau dipakai)
+    # klik per kueri -> {query: set(url, ...)}
+    "clicked_by_query": {},
+    # cache cohort "Rekomendasi Hari Ini"
+    "trending_results_df": pd.DataFrame(),
+    "trending_query": "",
     "topic_change_counter": 0,
     "per_tanggal_done_counter": 0,
 }.items():
@@ -92,13 +91,11 @@ def _keywords(tokens_min3, hay):
 def is_relevant_strict(query, title, summary, content, url):
     q = preprocess_text(query)
     hay = preprocess_text(" ".join([title or "", summary or "", content or "", url or ""]))
-    # frasa lengkap (2+ kata) muncul apa adanya → lolos
     if len(q.split()) >= 2 and q in hay:
         return True
     toks = [t for t in re.findall(r"\w+", q) if len(t) >= 3]
     if not toks:
         return False
-    # kueri pendek (<=2 token) cukup 1 token match; lebih panjang butuh >=2
     need = 1 if len(toks) <= 2 else 2
     return _keywords(toks, hay) >= need
 
@@ -177,27 +174,22 @@ def _normalize_to_jakarta(dt_str):
 def _parse_id_date_text(text):
     if not text: return ""
     t = text.strip()
-    # 12/08/2025 14:30
     m0 = re.search(r"(\d{2})/(\d{2})/(\d{4})[, ]+(\d{2}):(\d{2})", t)
     if m0:
         dd, mm, yyyy, hh, mi = m0.groups()
         return _normalize_to_jakarta(f"{yyyy}-{mm}-{dd} {hh}:{mi}")
-    # Senin, 12 Agu 2025 14:30
     bulan_map = {"Jan":"01","Feb":"02","Mar":"03","Apr":"04","Mei":"05","Jun":"06","Jul":"07","Agu":"08","Sep":"09","Okt":"10","Nov":"11","Des":"12"}
     m1 = re.search(r"(Senin|Selasa|Rabu|Kamis|Jumat|Sabtu|Minggu)\s*,\s*(\d{1,2})\s+(Jan|Feb|Mar|Apr|Mei|Jun|Jul|Agu|Sep|Okt|Nov|Des)\s+(\d{4})\s+(\d{2}:\d{2})", t, flags=re.IGNORECASE)
     if m1:
         _, dd, mon, yyyy, hhmm = m1.groups()
         mm = bulan_map.get(mon[:3].title(), "00")
         if mm != "00": return _normalize_to_jakarta(f"{yyyy}-{mm}-{int(dd):02d} {hhmm}")
-    # Senin, 12/08/2025 14:30
     m2 = re.search(r"(Senin|Selasa|Rabu|Kamis|Jumat|Sabtu|Minggu)\s*,\s*(\d{2})/(\d{2})/(\d{4})\s+(\d{2}:\d{2})", t, flags=re.IGNORECASE)
     if m2:
         _, dd, mm, yyyy, hhmm = m2.groups()
         return _normalize_to_jakarta(f"{yyyy}-{mm}-{dd} {hhmm}")
-    # ISO
     m3 = re.search(r"(\d{4}-\d{2}-\d{2}[ T]\d{2}:\d{2}(?::\d{2})?(?:Z|[+\-]\d{2}:?\d{2})?)", t)
     if m3: return _normalize_to_jakarta(m3.group(1))
-    # relatif
     m4 = re.search(r"(\d+)\s+(menit|jam|hari|minggu)\s+yang\s+lalu", t, flags=re.IGNORECASE)
     if m4:
         jumlah = int(m4.group(1)); unit = m4.group(2).lower()
@@ -651,7 +643,7 @@ def recommend(df, query, clf, n_per_source=3, min_score=0.55,
 
     return got.sort_values(["publishedAt_dt","final_score"], ascending=[False, False]).reset_index(drop=True)
 
-# ========================= LINK LOGGING =========================
+# ========================= LINK LOGGING (tanpa onclick, via redirect lokal) =========================
 def _b64enc(s):
     try: return base64.urlsafe_b64encode((s or "").encode()).decode()
     except Exception: return ""
@@ -660,77 +652,52 @@ def _b64dec(s):
     except Exception: return ""
 
 def make_logged_link(url, query, label="Baca selengkapnya"):
-    # tombol: buka tab baru + set query param untuk dilog
-    return (
-        f'<a class="cta" href="{url}" target="_blank" rel="noopener" '
-        f'onclick="return logAndOpenRaw('
-        f'\'{url}\', \'{_b64enc(url)}\', \'{_b64enc(query)}\');">'
-        f'{label}</a>'
-    )
-
-def _get_query_params():
-    try:
-        return st.query_params  # Streamlit >= 1.38
-    except Exception:
-        return st.experimental_get_query_params()
-
-def mount_click_logger_js():
-    components.html(
-        """
-        <script>
-          (function(){
-            window.logAndOpenRaw = (url, b64url, b64q) => {
-              try { window.open(url, '_blank'); } catch(e) {}
-              try {
-                const W = (window.parent && window.parent.location) ? window.parent : window;
-                const u = new URL(W.location.href);
-                u.searchParams.set('open', b64url);
-                u.searchParams.set('q', b64q);
-                u.searchParams.set('silent', '1');
-                W.location.href = u.toString();
-              } catch(e) {}
-              return false;
-            };
-          })();
-        </script>
-        """,
-        height=0,
-    )
+    # klik -> pindah ke URL internal ?go=... ; app mencatat & membuka artikel
+    return f'<a class="cta" href="?go={_b64enc(url)}&q={_b64enc(query)}" target="_self">{label}</a>'
 
 # ========================= APP =========================
 def main():
-    # Intercept ?open=... untuk mencatat klik & bersihkan URL
-    params = _get_query_params()
-    if "open" in params:
-        raw   = params["open"][0] if isinstance(params["open"], list) else params["open"]
+    # Tangkap redirect lokal ?go=...
+    try:
+        params = st.query_params  # Streamlit >= 1.38
+    except Exception:
+        params = st.experimental_get_query_params()
+
+    if "go" in params:
+        raw = params["go"][0] if isinstance(params["go"], list) else params["go"]
         raw_q = params.get("q", [""])[0] if isinstance(params.get("q", [""]), list) else params.get("q", "")
         url = _b64dec(raw); q = _b64dec(raw_q)
         if url:
             S.clicked_by_query.setdefault(q, set()).add(url)
+        # buka tab artikel & bersihkan query params
+        safe_url_js = json.dumps(url)
         components.html(
-            """
+            f"""
             <script>
-              try {
-                const base = window.location.href.split('?')[0];
-                window.history.replaceState({}, "", base);
-              } catch (e) {}
+              (function(){{
+                try{{ window.open({safe_url_js}, '_blank'); }}catch(e){{}}
+                try{{
+                  const base = window.location.href.split('?')[0];
+                  window.history.replaceState({{}}, "", base);
+                  window.location.href = base;
+                }}catch(e){{}}
+              }})();
             </script>
             """,
             height=0,
         )
+        st.stop()
 
     st.title("📰 Sistem Rekomendasi Berita")
     st.markdown(
         "Aplikasi ini merekomendasikan berita dari Detik, CNN Indonesia, dan Kompas "
         "berdasarkan riwayat topik. Waktu publikasi diambil langsung dari halaman artikel."
     )
-
-    mount_click_logger_js()
     st.markdown(
         """
         <style>
           .cta{
-            background:#007bff;color:#fff;padding:10px 16px;border-radius:10px;
+            background:#007bff;color:#fff;padding:10px 12px;border-radius:10px;
             text-decoration:none;display:inline-flex;align-items:center;gap:8px;font-weight:600;
             box-shadow:0 4px 12px rgba(0,123,255,.25);transition:transform .06s ease, box-shadow .2s ease, opacity .2s;
           }
@@ -741,7 +708,7 @@ def main():
         unsafe_allow_html=True,
     )
 
-    # sidebar
+    # Sidebar
     if st.sidebar.button("Bersihkan Cache & Muat Ulang"):
         st.cache_data.clear(); st.cache_resource.clear()
         st.success("Cache dibersihkan. Memuat ulang…"); time.sleep(1); st.rerun()
@@ -749,7 +716,7 @@ def main():
     if S.history.empty:
         S.history = load_history_from_github()
 
-    # model personalisasi (opsional, otomatis kalau datanya cukup)
+    # Model personalisasi
     st.sidebar.header("Model Personalisasi")
     try:
         df_train = build_training_data(USER_ID)
@@ -763,7 +730,7 @@ def main():
     else:
         st.sidebar.info("Model belum bisa dilatih karena riwayat tidak mencukupi.")
 
-    # ================= PENCARIAN PER TANGGAL (link biasa, TANPA logging) =================
+    # ============== PENCARIAN PER TANGGAL (tanpa logging, link biasa) ==============
     st.header("📚 Pencarian Berita per Tanggal")
     grouped_queries = get_recent_queries_by_days(USER_ID, S.history, days=3)
 
@@ -800,7 +767,7 @@ def main():
 
     st.markdown("---")
 
-    # ================= REKOMENDASI HARI INI (pakai tombol logging) =================
+    # ============== REKOMENDASI HARI INI (pakai tombol logging) ==============
     st.header("🔥 Rekomendasi Berita Hari Ini")
     trends = trending_by_query_frequency(USER_ID, S.history, days=3)
     if trends:
@@ -817,7 +784,6 @@ def main():
                 use_lr_boost=USE_LR_BOOST, alpha=ALPHA,
                 per_source_group=PER_SOURCE_GROUP,
             )
-            # simpan cohort rekomendasi hari ini ke session (akan disave saat submit pencarian)
             S.trending_results_df = results.copy()
             S.trending_query = q_top
 
@@ -830,7 +796,7 @@ def main():
                     st.write(f"Waktu: *{format_display_time(row.get('publishedAt',''))}*")
                     skor = row.get("final_score", row.get("sbert_score", 0.0))
                     st.write(f"Skor: `{float(skor):.2f}`")
-                    # tombol logging (WAJIB) → klik tercatat & buka tab baru
+                    # tombol logging
                     st.markdown(make_logged_link(row["url"], q_top), unsafe_allow_html=True)
                     st.markdown("---")
     else:
@@ -838,7 +804,7 @@ def main():
 
     st.markdown("---")
 
-    # ================= PENCARIAN BEBAS (FORM: tidak rerun saat fokus/ketik) =================
+    # ============== PENCARIAN BEBAS (pakai FORM) ==============
     st.header("🔍 Pencarian Berita")
     with st.form(key="search_form", clear_on_submit=False):
         search_query = st.text_input("Ketik topik berita yang ingin Anda cari:", value=S.current_query)
@@ -850,7 +816,7 @@ def main():
             if is_topic_change:
                 S.topic_change_counter += 1
 
-            # 1) simpan cohort "Rekomendasi Hari Ini" (kalau ada)
+            # 1) simpan cohort "Rekomendasi Hari Ini"
             try:
                 if S.trending_query and not S.trending_results_df.empty:
                     clicked_trending = list(S.clicked_by_query.get(S.trending_query, set()))
@@ -877,7 +843,6 @@ def main():
                     pass
                 st.cache_data.clear()
                 S.history = load_history_from_github()
-                # bersihkan klik untuk kueri lama (biar nggak dobel nyimpen)
                 if S.current_query in S.clicked_by_query:
                     S.clicked_by_query.pop(S.current_query, None)
 
@@ -911,7 +876,6 @@ def main():
                 st.write(f"Waktu: *{format_display_time(row.get('publishedAt',''))}*")
                 skor = row.get("final_score", row.get("sbert_score", 0.0))
                 st.write(f"Skor: `{float(skor):.2f}`")
-                # tombol logging (WAJIB)
                 st.markdown(make_logged_link(row["url"], S.current_query), unsafe_allow_html=True)
                 st.markdown("---")
 
