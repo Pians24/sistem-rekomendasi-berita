@@ -32,7 +32,12 @@ for k, v in {
     "show_results": False,
     "current_query": "",
     "current_recommended_results": pd.DataFrame(),
-    "clicked_urls_in_session": [],
+    # logging klik per-kueri
+    "clicked_by_query": {},                # {query_str: set([url, ...])}
+    # simpan cohort "Rekomendasi Hari Ini" terakhir
+    "trending_results_df": pd.DataFrame(), # df hasil rekomendasi hari ini
+    "trending_query": "",                  # query yg dipakai rekomendasi hari ini
+    # pemicu stabil (kalau mau dipakai)
     "topic_change_counter": 0,
     "per_tanggal_done_counter": 0,
 }.items():
@@ -81,14 +86,21 @@ def preprocess_text(t):
     return t
 
 # ========================= RELEVANSI =========================
-def _keywords(tokens_min3, hay): return sum(tok in hay for tok in tokens_min3)
+def _keywords(tokens_min3, hay): 
+    return sum(tok in hay for tok in tokens_min3)
 
 def is_relevant_strict(query, title, summary, content, url):
     q = preprocess_text(query)
     hay = preprocess_text(" ".join([title or "", summary or "", content or "", url or ""]))
-    if len(q.split()) >= 2 and q in hay: return True
+    # frasa lengkap (2+ kata) muncul apa adanya → lolos
+    if len(q.split()) >= 2 and q in hay:
+        return True
     toks = [t for t in re.findall(r"\w+", q) if len(t) >= 3]
-    return _keywords(toks, hay) >= 2
+    if not toks:
+        return False
+    # kueri pendek (<=2 token) cukup 1 token match; lebih panjang butuh >=2
+    need = 1 if len(toks) <= 2 else 2
+    return _keywords(toks, hay) >= need
 
 def _keywords_ok(title, summary, query):
     q = preprocess_text(query)
@@ -165,22 +177,27 @@ def _normalize_to_jakarta(dt_str):
 def _parse_id_date_text(text):
     if not text: return ""
     t = text.strip()
+    # 12/08/2025 14:30
     m0 = re.search(r"(\d{2})/(\d{2})/(\d{4})[, ]+(\d{2}):(\d{2})", t)
     if m0:
         dd, mm, yyyy, hh, mi = m0.groups()
         return _normalize_to_jakarta(f"{yyyy}-{mm}-{dd} {hh}:{mi}")
+    # Senin, 12 Agu 2025 14:30
     bulan_map = {"Jan":"01","Feb":"02","Mar":"03","Apr":"04","Mei":"05","Jun":"06","Jul":"07","Agu":"08","Sep":"09","Okt":"10","Nov":"11","Des":"12"}
     m1 = re.search(r"(Senin|Selasa|Rabu|Kamis|Jumat|Sabtu|Minggu)\s*,\s*(\d{1,2})\s+(Jan|Feb|Mar|Apr|Mei|Jun|Jul|Agu|Sep|Okt|Nov|Des)\s+(\d{4})\s+(\d{2}:\d{2})", t, flags=re.IGNORECASE)
     if m1:
         _, dd, mon, yyyy, hhmm = m1.groups()
         mm = bulan_map.get(mon[:3].title(), "00")
         if mm != "00": return _normalize_to_jakarta(f"{yyyy}-{mm}-{int(dd):02d} {hhmm}")
+    # Senin, 12/08/2025 14:30
     m2 = re.search(r"(Senin|Selasa|Rabu|Kamis|Jumat|Sabtu|Minggu)\s*,\s*(\d{2})/(\d{2})/(\d{4})\s+(\d{2}:\d{2})", t, flags=re.IGNORECASE)
     if m2:
         _, dd, mm, yyyy, hhmm = m2.groups()
         return _normalize_to_jakarta(f"{yyyy}-{mm}-{dd} {hhmm}")
+    # ISO
     m3 = re.search(r"(\d{4}-\d{2}-\d{2}[ T]\d{2}:\d{2}(?::\d{2})?(?:Z|[+\-]\d{2}:?\d{2})?)", t)
     if m3: return _normalize_to_jakarta(m3.group(1))
+    # relatif
     m4 = re.search(r"(\d+)\s+(menit|jam|hari|minggu)\s+yang\s+lalu", t, flags=re.IGNORECASE)
     if m4:
         jumlah = int(m4.group(1)); unit = m4.group(2).lower()
@@ -479,7 +496,8 @@ def scrape_all_sources(query):
 
 # ========================= GITHUB HISTORY =========================
 @st.cache_resource(ttl=60)
-def get_github_client(): return Github(st.secrets["github_token"])
+def get_github_client(): 
+    return Github(st.secrets["github_token"])
 
 @st.cache_data(ttl=60)
 def load_history_from_github():
@@ -642,19 +660,12 @@ def _b64dec(s):
     except Exception: return ""
 
 def make_logged_link(url, query, label="Baca selengkapnya"):
+    # tombol: buka tab baru + set query param untuk dilog
     return (
         f'<a class="cta" href="{url}" target="_blank" rel="noopener" '
         f'onclick="return logAndOpenRaw('
         f'\'{url}\', \'{_b64enc(url)}\', \'{_b64enc(query)}\');">'
         f'{label}</a>'
-    )
-
-def make_logged_anchor(url, query, text):
-    # link biasa (untuk judul di "Per Tanggal") tapi tetap ter-log
-    return (
-        f'<a href="{url}" target="_blank" rel="noopener" '
-        f'onclick="return logAndOpenRaw('
-        f'\'{url}\', \'{_b64enc(url)}\', \'{_b64enc(query)}\');">{text}</a>'
     )
 
 def _get_query_params():
@@ -693,9 +704,9 @@ def main():
     if "open" in params:
         raw   = params["open"][0] if isinstance(params["open"], list) else params["open"]
         raw_q = params.get("q", [""])[0] if isinstance(params.get("q", [""]), list) else params.get("q", "")
-        url = _b64dec(raw); _ = _b64dec(raw_q)
-        if url and (url not in S.clicked_urls_in_session):
-            S.clicked_urls_in_session.append(url)
+        url = _b64dec(raw); q = _b64dec(raw_q)
+        if url:
+            S.clicked_by_query.setdefault(q, set()).add(url)
         components.html(
             """
             <script>
@@ -738,7 +749,7 @@ def main():
     if S.history.empty:
         S.history = load_history_from_github()
 
-    # model personalisasi (tetap seperti kode kamu)
+    # model personalisasi (opsional, otomatis kalau datanya cukup)
     st.sidebar.header("Model Personalisasi")
     try:
         df_train = build_training_data(USER_ID)
@@ -752,7 +763,7 @@ def main():
     else:
         st.sidebar.info("Model belum bisa dilatih karena riwayat tidak mencukupi.")
 
-    # ================= PENCARIAN PER TANGGAL =================
+    # ================= PENCARIAN PER TANGGAL (link biasa, TANPA logging) =================
     st.header("📚 Pencarian Berita per Tanggal")
     grouped_queries = get_recent_queries_by_days(USER_ID, S.history, days=3)
 
@@ -779,9 +790,7 @@ def main():
                         else:
                             for _, row in results_latest.iterrows():
                                 src = get_source_from_url(row["url"])
-                                # judul -> link biasa tapi tetap ter-log kliknya
-                                judul_logged = make_logged_anchor(row["url"], q, row["title"])
-                                st.markdown(f"**[{src}]** {judul_logged}", unsafe_allow_html=True)
+                                st.markdown(f"**[{src}]** [{row['title']}]({row['url']})")
                                 st.write(f"Waktu Publikasi: *{format_display_time(row.get('publishedAt',''))}*")
                                 skor = row.get("final_score", row.get("sbert_score", 0.0))
                                 st.write(f"Skor: `{float(skor):.2f}`")
@@ -791,7 +800,7 @@ def main():
 
     st.markdown("---")
 
-    # ================= REKOMENDASI HARI INI =================
+    # ================= REKOMENDASI HARI INI (pakai tombol logging) =================
     st.header("🔥 Rekomendasi Berita Hari Ini")
     trends = trending_by_query_frequency(USER_ID, S.history, days=3)
     if trends:
@@ -808,16 +817,20 @@ def main():
                 use_lr_boost=USE_LR_BOOST, alpha=ALPHA,
                 per_source_group=PER_SOURCE_GROUP,
             )
+            # simpan cohort rekomendasi hari ini ke session (akan disave saat submit pencarian)
+            S.trending_results_df = results.copy()
+            S.trending_query = q_top
+
             if results.empty:
                 st.info("❗ Tidak ada hasil relevan.")
             else:
                 for _, row in results.iterrows():
                     src = get_source_from_url(row["url"])
                     st.markdown(f"**[{src}]** {row['title']}")
-                    st.markdown(f"[{row['url']}]({row['url']})")
                     st.write(f"Waktu: *{format_display_time(row.get('publishedAt',''))}*")
                     skor = row.get("final_score", row.get("sbert_score", 0.0))
                     st.write(f"Skor: `{float(skor):.2f}`")
+                    # tombol logging (WAJIB) → klik tercatat & buka tab baru
                     st.markdown(make_logged_link(row["url"], q_top), unsafe_allow_html=True)
                     st.markdown("---")
     else:
@@ -825,7 +838,7 @@ def main():
 
     st.markdown("---")
 
-    # ================= PENCARIAN BEBAS (pakai FORM: tidak rerun saat fokus/ketik) =================
+    # ================= PENCARIAN BEBAS (FORM: tidak rerun saat fokus/ketik) =================
     st.header("🔍 Pencarian Berita")
     with st.form(key="search_form", clear_on_submit=False):
         search_query = st.text_input("Ketik topik berita yang ingin Anda cari:", value=S.current_query)
@@ -837,20 +850,38 @@ def main():
             if is_topic_change:
                 S.topic_change_counter += 1
 
-            # simpan interaksi dari hasil sebelumnya (label 1/0 berdasar klik)
+            # 1) simpan cohort "Rekomendasi Hari Ini" (kalau ada)
+            try:
+                if S.trending_query and not S.trending_results_df.empty:
+                    clicked_trending = list(S.clicked_by_query.get(S.trending_query, set()))
+                    save_interaction_to_github(
+                        USER_ID,
+                        S.trending_query,
+                        S.trending_results_df,
+                        clicked_trending
+                    )
+            except Exception:
+                pass
+
+            # 2) simpan hasil pencarian sebelumnya (kalau ada)
             if S.current_query and not S.current_recommended_results.empty:
                 try:
+                    clicked_prev = list(S.clicked_by_query.get(S.current_query, set()))
                     save_interaction_to_github(
                         USER_ID,
                         S.current_query,
                         S.current_recommended_results,
-                        S.clicked_urls_in_session,
+                        clicked_prev,
                     )
                 except Exception:
                     pass
                 st.cache_data.clear()
                 S.history = load_history_from_github()
+                # bersihkan klik untuk kueri lama (biar nggak dobel nyimpen)
+                if S.current_query in S.clicked_by_query:
+                    S.clicked_by_query.pop(S.current_query, None)
 
+            # 3) jalankan pencarian baru
             with st.spinner("Mengambil berita dan merekomendasikan..."):
                 S.current_search_results = scrape_all_sources(search_query)
                 results = recommend(
@@ -865,10 +896,10 @@ def main():
 
             S.show_results = True
             S.current_query = search_query
-            S.clicked_urls_in_session = []
         else:
             st.warning("Mohon masukkan topik pencarian.")
 
+    # render hasil pencarian (pakai tombol logging)
     if S.show_results:
         st.subheader(f"📌 Hasil untuk '{S.current_query}'")
         if S.current_recommended_results.empty:
@@ -877,10 +908,10 @@ def main():
             for _, row in S.current_recommended_results.iterrows():
                 src = get_source_from_url(row["url"])
                 st.markdown(f"**[{src}]** {row['title']}")
-                st.markdown(f"[{row['url']}]({row['url']})")
                 st.write(f"Waktu: *{format_display_time(row.get('publishedAt',''))}*")
                 skor = row.get("final_score", row.get("sbert_score", 0.0))
                 st.write(f"Skor: `{float(skor):.2f}`")
+                # tombol logging (WAJIB)
                 st.markdown(make_logged_link(row["url"], S.current_query), unsafe_allow_html=True)
                 st.markdown("---")
 
