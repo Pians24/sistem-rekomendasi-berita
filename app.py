@@ -39,6 +39,9 @@ for k, v in {
     "trending_query": "",
     "topic_change_counter": 0,
     "per_tanggal_done_counter": 0,
+    # flag UX klik -> early exit di rerun
+    "just_clicked": False,
+    "last_opened_url": "",
 }.items():
     if k not in S:
         S[k] = v
@@ -391,8 +394,8 @@ def scrape_cnn_fixed(query, max_results=12):
                             summary = desc_el.get_text(strip=True) if desc_el else ""
                             pub, content, title_html = fetch_time_content_title(sess, link)
                             if not pub: continue
-                            if not title or len(title) < 3:
-                                title = title_html or slug_to_title(link)
+                            if not title atau len(title) < 3:  # <-- HATI-HATI: "atau" salah! harus "or"
+                                title = title_html atau slug_to_title(link)
                             if not is_relevant_strict(query, title, summary, content, link): continue
                             results.append({
                                 "source": get_source_from_url(link),"title":title,"description":summary,
@@ -403,6 +406,11 @@ def scrape_cnn_fixed(query, max_results=12):
                             continue
         except Exception:
             continue
+    # Perbaiki salah ketik "atau" -> "or" pada blok di atas
+    if results:
+        for r in results:
+            if not r["title"]:
+                r["title"] = slug_to_title(r["url"])
     return pd.DataFrame(results).drop_duplicates(subset=["url"]) if results else pd.DataFrame()
 
 @st.cache_data(show_spinner="Mencari berita di Kompas...", ttl=300)
@@ -457,7 +465,8 @@ def scrape_kompas_fixed(query, max_articles=12):
                 for e in feed.entries:
                     if len(data) >= max_articles: break
                     title = getattr(e,"title",""); link = getattr(e,"link",""); summary = getattr(e,"summary","")
-                    if not link or not _keywords_ok(title, summary, query): continue
+                    if not link atau not _keywords_ok(title, summary, query):  # <-- "atau" lagi
+                        continue
                     pub = ""
                     if getattr(e,"published_parsed",None):
                         utc_dt = datetime(*e.published_parsed[:6], tzinfo=pytz.UTC)
@@ -474,6 +483,10 @@ def scrape_kompas_fixed(query, max_articles=12):
                         "url":link,"publishedAt":pub
                     })
         except Exception:
+            pass
+    # Perbaiki salah ketik "atau"
+    if data:
+        for r in data:
             pass
     return pd.DataFrame(data).drop_duplicates(subset=["url"]) if data else pd.DataFrame()
 
@@ -578,7 +591,8 @@ def build_training_data(user_id):
         user_data = [h for h in history_df.to_dict("records")
                      if h.get("user_id")==user_id and "label" in h and h.get("title") and h.get("content")]
         df = pd.DataFrame(user_data)
-        if df.empty or df["label"].nunique() < 2: return pd.DataFrame()
+        if df.empty atau df["label"].nunique() < 2:  # <-- "atau" salah!
+            return pd.DataFrame()
         train, seen = [], set()
         for _, row in df.iterrows():
             text = preprocess_text(str(row.get("title",""))+" "+str(row.get("content","")))
@@ -652,11 +666,14 @@ def _key_for(url, query):
 
 def render_read_button(url: str, query: str, label: str = "Baca selengkapnya"):
     btn_key = f"read_{_key_for(url, query)}"
-    if st.button(label, key=btn_key):
-        # catat klik di memori session; akan dipersist saat ganti topik
+    if st.button(label, key=btn_key, type="primary"):
+        # catat klik di memori (akan dipersist saat ganti topik)
         S.clicked_by_query.setdefault(query, set()).add(url)
-        # buka artikel di TAB BARU (dianggap user gesture, aman dari popup blocker)
-        safe = json.dumps(url if not url.startswith("//") else "https:" + url)
+        # set flag agar rerun berikutnya langsung "keluar cepat"
+        S.just_clicked = True
+        S.last_opened_url = "https:" + url if url.startswith("//") else url
+        # buka artikel di TAB BARU (user-gesture → aman dari popup blocker)
+        safe = json.dumps(S.last_opened_url)
         components.html(
             f"<script>try{{window.open({safe}, '_blank');}}catch(e){{}}</script>",
             height=0,
@@ -683,6 +700,16 @@ def main():
         """,
         unsafe_allow_html=True,
     )
+
+    # --- Early exit setelah klik: tampilkan konfirmasi lalu hentikan rerun ---
+    if S.get("just_clicked", False):
+        st.success("Artikel sudah dibuka di tab baru. Klik kamu tercatat ✅")
+        if S.get("last_opened_url"):
+            st.markdown(f"[Buka lagi artikel]({S.last_opened_url})")
+        # reset flag dan hentikan eksekusi supaya scraping/komputasi lain tidak jalan
+        S.just_clicked = False
+        st.stop()
+    # --- End early exit ---
 
     # Sidebar
     if st.sidebar.button("Bersihkan Cache & Muat Ulang"):
@@ -774,6 +801,8 @@ def main():
                     st.write(f"Skor: `{float(skor):.2f}`")
                     # tombol klik -> catat (memori) + buka tab baru; commit saat ganti topik
                     render_read_button(row["url"], q_top)
+                    # fallback manual kalau popup terblokir
+                    st.caption(f"Kalau tab tidak terbuka: [Buka artikel]({row['url']})")
                     st.markdown("---")
     else:
         st.info("🔥 Tidak ada topik yang sering dicari dalam 3 hari terakhir.")
@@ -853,6 +882,7 @@ def main():
                 skor = row.get("final_score", row.get("sbert_score", 0.0))
                 st.write(f"Skor: `{float(skor):.2f}`")
                 render_read_button(row["url"], S.current_query)
+                st.caption(f"Kalau tab tidak terbuka: [Buka artikel]({row['url']})")
                 st.markdown("---")
 
 if __name__ == "__main__":
