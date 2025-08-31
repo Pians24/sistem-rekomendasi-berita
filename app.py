@@ -39,9 +39,12 @@ for k, v in {
     "trending_query": "",
     "topic_change_counter": 0,
     "per_tanggal_done_counter": 0,
-    # UX flag setelah klik → early exit di rerun
-    "just_clicked": False,
+    # UX flags
+    "just_clicked": False,        # untuk early-exit habis klik
     "last_opened_url": "",
+    # commit modes
+    "commit_mode": "Ganti topik", # "Ganti topik" | "Langsung" | "Idle 15 detik"
+    "_last_click_ts": 0.0,        # timestamp klik terakhir (untuk idle-commit)
 }.items():
     if k not in S:
         S[k] = v
@@ -208,13 +211,13 @@ def _parse_id_date_text(text):
 def extract_published_at_from_article_html(art_soup, url=""):
     try:
         for s in art_soup.find_all("script", attrs={"type":"application/ld+json"}):
-            raw = (s.string or s.text or "").strip() 
-            if not raw: 
+            raw = (s.string or s.text or "").strip()
+            if not raw:
                 continue
             data = json.loads(raw)
             candidates = data if isinstance(data, list) else [data]
             for obj in candidates:
-                if not isinstance(obj, dict): 
+                if not isinstance(obj, dict):
                     continue
                 for key in ("datePublished","dateCreated"):
                     if obj.get(key):
@@ -335,7 +338,7 @@ def scrape_detik(query, max_articles=15):
                     if real: pub = real
                     if not pub: continue
                     if not title or len(title) < 3:
-                        title = title_html or slug_to_title(link)  
+                        title = title_html or slug_to_title(link)
                     if not is_relevant_strict(query, title, summary, content, link): continue
                     data.append({
                         "source":"Detik","title":title,"description":summary,
@@ -652,6 +655,17 @@ def recommend(df, query, clf, n_per_source=3, min_score=0.55,
 
     return got.sort_values(["publishedAt_dt","final_score"], ascending=[False, False]).reset_index(drop=True)
 
+# ========================= UTIL KOMIT =========================
+def _commit_for_query(q, df):
+    try:
+        clicked = list(S.clicked_by_query.get(q, set()))
+        if clicked and df is not None and not df.empty:
+            save_interaction_to_github(USER_ID, q, df, clicked)
+            # setelah commit, kosongkan yang sudah tersimpan
+            S.clicked_by_query.pop(q, None)
+    except Exception:
+        pass
+
 # ========================= TOMBOL BACA (catat klik + buka artikel) =========================
 def _key_for(url, query):
     raw = f"{url}|{query}"
@@ -660,17 +674,42 @@ def _key_for(url, query):
 def render_read_button(url: str, query: str, label: str = "Baca selengkapnya"):
     btn_key = f"read_{_key_for(url, query)}"
     if st.button(label, key=btn_key):
-        # catat klik di memori (akan dipersist saat ganti topik)
+        # 1) catat klik (label=1 dihitung saat commit)
         S.clicked_by_query.setdefault(query, set()).add(url)
-        # set flag agar rerun berikutnya langsung "keluar cepat"
         S.just_clicked = True
         S.last_opened_url = "https:" + url if url.startswith("//") else url
-        # buka artikel di TAB BARU (user-gesture → aman dari popup blocker)
+        S._last_click_ts = time.time()
+
+        # 2) buka artikel di TAB BARU (anchor programatik -> aman popup blocker)
         safe = json.dumps(S.last_opened_url)
         components.html(
-            f"<script>try{{window.open({safe}, '_blank');}}catch(e){{}}</script>",
+            f"""
+            <script>
+              (function(){{
+                try {{
+                  var url = {safe};
+                  var a = document.createElement('a');
+                  a.href = url;
+                  a.target = '_blank';
+                  a.rel = 'noopener noreferrer';
+                  a.style.display = 'none';
+                  document.body.appendChild(a);
+                  a.click();
+                }} catch(e) {{
+                  try {{ window.open({safe}, '_blank'); }} catch(_e) {{}}
+                }}
+              }})();
+            </script>
+            """,
             height=0,
         )
+
+        # 3) commit langsung jika mode "Langsung"
+        if S.commit_mode == "Langsung":
+            if S.current_query and S.current_query == query and not S.current_recommended_results.empty:
+                _commit_for_query(query, S.current_recommended_results)
+            elif S.trending_query and S.trending_query == query and not S.trending_results_df.empty:
+                _commit_for_query(query, S.trending_results_df)
 
 # ========================= APP =========================
 def main():
@@ -694,23 +733,41 @@ def main():
         unsafe_allow_html=True,
     )
 
-    # --- Early exit setelah klik: hentikan rerun berat ---
+    # === Early-exit habis klik: hentikan rerun berat ===
     if S.get("just_clicked", False):
-        st.success("Artikel sudah dibuka di tab baru. Klik kamu tercatat ✅")
+        st.success("Artikel dibuka di tab baru. Klik kamu tercatat ✅")
         if S.get("last_opened_url"):
             st.markdown(f"[Buka lagi artikel]({S.last_opened_url})")
         S.just_clicked = False
         st.stop()
 
-    # Sidebar
+    # === Sidebar: kontrol cache & mode commit ===
     if st.sidebar.button("Bersihkan Cache & Muat Ulang"):
         st.cache_data.clear(); st.cache_resource.clear()
         st.success("Cache dibersihkan. Memuat ulang…"); time.sleep(1); st.rerun()
 
+    S.commit_mode = st.sidebar.selectbox(
+        "Mode simpan klik",
+        ["Ganti topik", "Langsung", "Idle 15 detik"],
+        index=["Ganti topik", "Langsung", "Idle 15 detik"].index(S.get("commit_mode","Ganti topik"))
+    )
+
+    # === Idle-commit: jika user diam >= 15 detik setelah klik ===
+    if S.commit_mode == "Idle 15 detik":
+        last = S.get("_last_click_ts", 0.0)
+        if last and (time.time() - last) >= 15:
+            # commit untuk query aktif
+            if S.current_query and not S.current_recommended_results.empty:
+                _commit_for_query(S.current_query, S.current_recommended_results)
+            if S.trending_query and not S.trending_results_df.empty:
+                _commit_for_query(S.trending_query, S.trending_results_df)
+            S._last_click_ts = 0.0
+
+    # === History awal ===
     if S.history.empty:
         S.history = load_history_from_github()
 
-    # Model personalisasi
+    # === Model personalisasi ===
     st.sidebar.header("Model Personalisasi")
     try:
         df_train = build_training_data(USER_ID)
