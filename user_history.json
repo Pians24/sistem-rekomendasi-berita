@@ -1307,5 +1307,60 @@
     "click_time": "Monday, 01 September 2025 00:04",
     "publishedAt": "2025-08-31 16:09",
     "label": 0
+  },
+  {
+    "user_id": "user_01",
+    "query": "Sri Mulyani",
+    "title": "Isu Mundur, Sri Mulyani Ikut Rapat dengan Prabowo di Istana",
+    "url": "https://www.cnnindonesia.com/nasional/20250831185417-32-1268545/isu-mundur-sri-mulyani-ikut-rapat-dengan-prabowo-di-istana",
+    "content": "Isu Mundur, Sri Mulyani Ikut Rapat dengan Prabowo di Istana <img src=\"https://akcdn.detik.net.id/visual/2025/08/31/sri-mulyani-1756641485273_169.jpeg?w=360&amp;q=90\" /> Sri Mulyani hadir di rapat kabinet Prabowo yang digelar di Istana, Minggu (31/8). Sebelumnya muncul isu Menkeu mundur usai penjarahan.",
+    "source": "CNN",
+    "click_time": "Monday, 01 September 2025 00:04",
+    "publishedAt": "2025-08-31 20:13",
+    "label": 1
+  },
+  {
+    "user_id": "user_01",
+    "query": "Sri Mulyani",
+    "title": "Kondisi Terbaru Rumah Sri Mulyani",
+    "url": "https://www.detik.com/jabar/foto/d-8088832/kondisi-terbaru-rumah-sri-mulyani",
+    "content": "Kondisi Terbaru Rumah Sri Mulyani",
+    "source": "Detik",
+    "click_time": "Monday, 01 September 2025 00:04",
+    "publishedAt": "2025-08-31 12:10",
+    "label": 1
+  },
+  {
+    "user_id": "user_01",
+    "query": "Sri Mulyani",
+    "title": "Sri Mulyani Berduka, Istri Mendiang Menkeu Mar’ie Muhammad Meninggal Dunia",
+    "url": "https://money.kompas.com/read/2025/08/24/194804326/sri-mulyani-berduka-istri-mendiang-menkeu-marie-muhammad-meninggal-dunia",
+    "content": "Sri Mulyani Berduka, Istri Mendiang Menkeu Mar’ie Muhammad Meninggal Dunia",
+    "source": "Kompas",
+    "click_time": "Monday, 01 September 2025 00:04",
+    "publishedAt": "2025-08-24 19:48",
+    "label": 1
+  },
+  {
+    "user_id": "user_01",
+    "query": "Sri Mulyani",
+    "title": "Penjelasan Sri Mulyani soal Gaji PNS Tidak Naik Tahun Depan",
+    "url": "https://money.kompas.com/read/2025/08/19/155300626/penjelasan-sri-mulyani-soal-gaji-pns-tidak-naik-tahun-depan",
+    "content": "Penjelasan Sri Mulyani soal Gaji PNS Tidak Naik Tahun Depan",
+    "source": "Kompas",
+    "click_time": "Monday, 01 September 2025 00:04",
+    "publishedAt": "2025-08-19 15:53",
+    "label": 1
+  },
+  {
+    "user_id": "user_01",
+    "query": "Sri Mulyani",
+    "title": "Sri Mulyani, Urunan Gaji Dosen, dan Ironi Negara Pendidikan",
+    "url": "https://www.kompas.com/edu/read/2025/08/11/063000271/sri-mulyani-urunan-gaji-dosen-dan-ironi-negara-pendidikan",
+    "content": "Sri Mulyani, Urunan Gaji Dosen, dan Ironi Negara Pendidikan",
+    "source": "Kompas",
+    "click_time": "Monday, 01 September 2025 00:04",
+    "publishedAt": "2025-08-11 06:30",
+    "label": 0
   }
 ]
