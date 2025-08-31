@@ -279,7 +279,7 @@ def format_display_time(s):
 def scrape_detik(query, max_articles=15):
     data, sess = [], make_session()
     try:
-        search_url = f"https://www.detik.com/search/searchall?query={urllib.parse.quote(query)}"
+        search_url = f"https://www.detik.com/search/searchall?query={requests.utils.quote(query)}"
         res = sess.get(search_url, timeout=15)
         if res.status_code == 200:
             soup = BeautifulSoup(res.content, "html.parser")
@@ -346,7 +346,7 @@ def scrape_detik(query, max_articles=15):
 @st.cache_data(show_spinner="Mencari berita di CNN...", ttl=300)
 def scrape_cnn_fixed(query, max_results=12):
     urls = [
-        f"https://www.cnnindonesia.com/search?query={urllib.parse.quote(query)}",
+        f"https://www.cnnindonesia.com/search?query={requests.utils.quote(query)}",
         "https://www.cnnindonesia.com/nasional/rss","https://www.cnnindonesia.com/internasional/rss",
         "https://www.cnnindonesia.com/ekonomi/rss","https://www.cnnindonesia.com/olahraga/rss",
         "https://www.cnnindonesia.com/gaya-hidup/rss",
@@ -411,7 +411,7 @@ def scrape_cnn_fixed(query, max_results=12):
 def scrape_kompas_fixed(query, max_articles=12):
     data, sess = [], make_session()
     try:
-        search_url = f"https://search.kompas.com/search?q={urllib.parse.quote(query)}"
+        search_url = f"https://search.kompas.com/search?q={requests.utils.quote(query)}"
         res = sess.get(search_url, timeout=20)
         if res.status_code == 200:
             soup = BeautifulSoup(res.text, "html.parser")
@@ -657,31 +657,28 @@ def _key_for(url, query):
 def render_read_button(url: str, query: str, label: str = "Baca selengkapnya"):
     btn_key = f"read_{_key_for(url, query)}"
     if st.button(label, key=btn_key):
-        # tandai sebagai diklik (label = 1 saat persist)
+        # 1) catat klik (label=1 akan dihitung saat commit topik baru)
         S.clicked_by_query.setdefault(query, set()).add(url)
 
-        # buka tab baru via anchor (user gesture → aman dari popup blocker)
-        opened = "https:" + url if url.startswith("//") else url
-        safe = json.dumps(opened)
+        # 2) buka artikel di TAB BARU (user-gesture → aman dari popup blocker)
+        safe = json.dumps("https:" + url if url.startswith("//") else url)
         components.html(
-            """
+            f"""
             <script>
-            (function(){
-              try{
-                var url = %s;
-                var a = document.createElement('a');
-                a.href = url; a.target = '_blank'; a.rel = 'noopener noreferrer';
-                a.style.display='none'; document.body.appendChild(a); a.click();
-              }catch(e){
-                try{ window.open(%s, '_blank'); }catch(_e){}
-              }
-            })();
+              (function(){{
+                try {{
+                  var u = {safe};
+                  var a = document.createElement('a');
+                  a.href = u; a.target = '_blank'; a.rel='noopener noreferrer'; a.style.display='none';
+                  document.body.appendChild(a); a.click();
+                }} catch(e) {{
+                  try {{ window.open({safe}, '_blank'); }} catch(_e) {{}}
+                }}
+              }})();
             </script>
-            """ % (safe, safe),
+            """,
             height=0,
         )
-        # feedback kecil (opsional)
-        st.caption("✅ Klik tercatat & tab baru dibuka.")
 
 # ========================= APP =========================
 def main():
@@ -690,22 +687,8 @@ def main():
         "Aplikasi ini merekomendasikan berita dari Detik, CNN Indonesia, dan Kompas "
         "berdasarkan riwayat topik. Waktu publikasi diambil langsung dari halaman artikel."
     )
-    st.markdown(
-        """
-        <style>
-          .cta{
-            background:#007bff;color:#fff;padding:10px 12px;border-radius:10px;
-            text-decoration:none;display:inline-flex;align-items:center;gap:8px;font-weight:600;
-            box-shadow:0 4px 12px rgba(0,123,255,.25);transition:transform .06s ease, box-shadow .2s ease, opacity .2s;
-          }
-          .cta:hover{transform:translateY(-1px);box-shadow:0 6px 16px rgba(0,123,255,.35);opacity:.96}
-          .cta:active{transform:translateY(0)}
-        </style>
-        """,
-        unsafe_allow_html=True,
-    )
 
-    # Sidebar
+    # Sidebar (hanya cache + model personalisasi)
     if st.sidebar.button("Bersihkan Cache & Muat Ulang"):
         st.cache_data.clear(); st.cache_resource.clear()
         st.success("Cache dibersihkan. Memuat ulang…"); time.sleep(1); st.rerun()
@@ -713,7 +696,6 @@ def main():
     if S.history.empty:
         S.history = load_history_from_github()
 
-    # Model personalisasi
     st.sidebar.header("Model Personalisasi")
     try:
         df_train = build_training_data(USER_ID)
@@ -727,44 +709,7 @@ def main():
     else:
         st.sidebar.info("Model belum bisa dilatih karena riwayat tidak mencukupi.")
 
-    # ============== PENCARIAN PER TANGGAL (tautan biasa, tanpa logging klik) ==============
-    st.header("📚 Pencarian Berita per Tanggal")
-    grouped_queries = get_recent_queries_by_days(USER_ID, S.history, days=3)
-
-    if grouped_queries:
-        for date, queries in grouped_queries.items():
-            st.subheader(f"Tanggal {date}")
-            for q in sorted(set(queries)):
-                with st.expander(f"- {q}", expanded=True):
-                    with st.spinner("Mengambil berita terbaru dari 3 sumber..."):
-                        df_latest = scrape_all_sources(q)
-
-                    if df_latest.empty:
-                        st.info("❗ Tidak ditemukan berita terbaru untuk topik ini.")
-                    else:
-                        results_latest = recommend(
-                            df_latest, q, clf,
-                            n_per_source=3,
-                            min_score=DEFAULT_MIN_SCORE,
-                            use_lr_boost=USE_LR_BOOST, alpha=ALPHA,
-                            per_source_group=PER_SOURCE_GROUP,
-                        )
-                        if results_latest.empty:
-                            st.info("❗ Tidak ada hasil relevan dari portal untuk topik ini.")
-                        else:
-                            for _, row in results_latest.iterrows():
-                                src = get_source_from_url(row["url"])
-                                st.markdown(f"**[{src}]** [{row['title']}]({row['url']})")
-                                st.write(f"Waktu Publikasi: *{format_display_time(row.get('publishedAt',''))}*")
-                                skor = row.get("final_score", row.get("sbert_score", 0.0))
-                                st.write(f"Skor: `{float(skor):.2f}``)
-                                st.markdown("---")
-    else:
-        st.info("Belum ada riwayat pencarian pada 3 hari terakhir.")
-
-    st.markdown("---")
-
-    # ============== REKOMENDASI HARI INI (pakai tombol logging) ==============
+    # ---------- REKOMENDASI HARI INI (opsional, tetap ada) ----------
     st.header("🔥 Rekomendasi Berita Hari Ini")
     trends = trending_by_query_frequency(USER_ID, S.history, days=3)
     if trends:
@@ -783,7 +728,6 @@ def main():
             )
             S.trending_results_df = results.copy()
             S.trending_query = q_top
-
             if results.empty:
                 st.info("❗ Tidak ada hasil relevan.")
             else:
@@ -801,7 +745,7 @@ def main():
 
     st.markdown("---")
 
-    # ============== PENCARIAN BEBAS (pakai FORM) ==============
+    # ---------- PENCARIAN BEBAS (fokus utama) ----------
     st.header("🔍 Pencarian Berita")
     with st.form(key="search_form", clear_on_submit=False):
         search_query = st.text_input("Ketik topik berita yang ingin Anda cari:", value=S.current_query)
@@ -810,40 +754,32 @@ def main():
     if submitted:
         if search_query:
             is_topic_change = (S.current_query.strip().lower() != search_query.strip().lower()) and (S.current_query != "")
+
+            # Commit hasil sebelumnya saat ganti topik (klik=1, tidak klik=0)
             if is_topic_change:
-                S.topic_change_counter += 1
-
-            # 1) persist cohort "Rekomendasi Hari Ini" saat ganti topik
-            try:
-                if S.trending_query and not S.trending_results_df.empty:
-                    clicked_trending = list(S.clicked_by_query.get(S.trending_query, set()))
-                    save_interaction_to_github(
-                        USER_ID,
-                        S.trending_query,
-                        S.trending_results_df,
-                        clicked_trending
-                    )
-            except Exception:
-                pass
-
-            # 2) persist hasil pencarian sebelumnya saat ganti topik
-            if S.current_query and not S.current_recommended_results.empty:
                 try:
-                    clicked_prev = list(S.clicked_by_query.get(S.current_query, set()))
-                    save_interaction_to_github(
-                        USER_ID,
-                        S.current_query,
-                        S.current_recommended_results,
-                        clicked_prev,
-                    )
+                    # Simpan cohort "Rekomendasi Hari Ini" bila ada klik
+                    if S.trending_query and not S.trending_results_df.empty:
+                        clicked_trending = list(S.clicked_by_query.get(S.trending_query, set()))
+                        save_interaction_to_github(
+                            USER_ID, S.trending_query, S.trending_results_df, clicked_trending
+                        )
+                    # Simpan hasil pencarian sebelumnya
+                    if S.current_query and not S.current_recommended_results.empty:
+                        clicked_prev = list(S.clicked_by_query.get(S.current_query, set()))
+                        save_interaction_to_github(
+                            USER_ID, S.current_query, S.current_recommended_results, clicked_prev
+                        )
+                        # bersihkan jejak klik kueri lama
+                        if S.current_query in S.clicked_by_query:
+                            S.clicked_by_query.pop(S.current_query, None)
+                    # refresh history untuk panel per tanggal
+                    st.cache_data.clear()
+                    S.history = load_history_from_github()
                 except Exception:
                     pass
-                st.cache_data.clear()
-                S.history = load_history_from_github()
-                if S.current_query in S.clicked_by_query:
-                    S.clicked_by_query.pop(S.current_query, None)
 
-            # 3) jalankan pencarian baru
+            # Pencarian baru
             with st.spinner("Mengambil berita dan merekomendasikan..."):
                 S.current_search_results = scrape_all_sources(search_query)
                 results = recommend(
@@ -861,7 +797,7 @@ def main():
         else:
             st.warning("Mohon masukkan topik pencarian.")
 
-    # render hasil pencarian (pakai tombol logging)
+    # Render hasil pencarian (pakai tombol logging)
     if S.show_results:
         st.subheader(f"📌 Hasil untuk '{S.current_query}'")
         if S.current_recommended_results.empty:
@@ -876,6 +812,46 @@ def main():
                 render_read_button(row["url"], S.current_query)
                 st.caption(f"Kalau tab tidak terbuka: [Buka artikel]({row['url']})")
                 st.markdown("---")
+
+            # info kecil di bawah daftar: berapa yang sudah tercatat
+            clicked_cnt = len(S.clicked_by_query.get(S.current_query, set()))
+            total_cnt = len(S.current_recommended_results)
+            st.caption(f"Klik tercatat: {clicked_cnt} dari {total_cnt}. Data akan disimpan saat Anda mencari topik baru.")
+
+    st.markdown("---")
+
+    # ---------- PENCARIAN BERITA PER TANGGAL (read-only link) ----------
+    st.header("📚 Pencarian Berita per Tanggal")
+    grouped_queries = get_recent_queries_by_days(USER_ID, S.history, days=3)
+    if grouped_queries:
+        for date, queries in grouped_queries.items():
+            st.subheader(f"Tanggal {date}")
+            for q in sorted(set(queries)):
+                with st.expander(f"- {q}", expanded=True):
+                    with st.spinner("Mengambil berita terbaru dari 3 sumber..."):
+                        df_latest = scrape_all_sources(q)
+                    if df_latest.empty:
+                        st.info("❗ Tidak ditemukan berita terbaru untuk topik ini.")
+                    else:
+                        results_latest = recommend(
+                            df_latest, q, clf,
+                            n_per_source=3,
+                            min_score=DEFAULT_MIN_SCORE,
+                            use_lr_boost=USE_LR_BOOST, alpha=ALPHA,
+                            per_source_group=PER_SOURCE_GROUP,
+                        )
+                        if results_latest.empty:
+                            st.info("❗ Tidak ada hasil relevan dari portal untuk topik ini.")
+                        else:
+                            for _, row in results_latest.iterrows():
+                                src = get_source_from_url(row["url"])
+                                st.markdown(f"**[{src}]** [{row['title']}]({row['url']})")
+                                st.write(f"Waktu Publikasi: *{format_display_time(row.get('publishedAt',''))}*")
+                                skor = row.get("final_score", row.get("sbert_score", 0.0))
+                                st.write(f"Skor: `{float(skor):.2f}`")
+                                st.markdown("---")
+    else:
+        st.info("Belum ada riwayat pencarian pada 3 hari terakhir.")
 
 if __name__ == "__main__":
     main()
