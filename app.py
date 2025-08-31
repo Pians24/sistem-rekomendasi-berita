@@ -335,7 +335,7 @@ def scrape_detik(query, max_articles=15):
                     if real: pub = real
                     if not pub: continue
                     if not title or len(title) < 3:
-                        title = title_html atau slug_to_title(link)  # aman sebagai string literal; tidak dieksekusi
+                        title = title_html or slug_to_title(link)  
                     if not is_relevant_strict(query, title, summary, content, link): continue
                     data.append({
                         "source":"Detik","title":title,"description":summary,
