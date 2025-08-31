@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 import streamlit as st
-import re, json, time, random, requests, base64, urllib.parse, uuid
+import re, json, time, random, requests, base64, urllib.parse, uuid, hashlib
 import pandas as pd
 import pytz
 import feedparser
@@ -39,8 +39,6 @@ for k, v in {
     "trending_query": "",
     "topic_change_counter": 0,
     "per_tanggal_done_counter": 0,
-    # token yang sudah diproses untuk mencegah eksekusi ganda saat rerun
-    "processed_redirect_tokens": set(),
 }.items():
     if k not in S:
         S[k] = v
@@ -647,94 +645,25 @@ def recommend(df, query, clf, n_per_source=3, min_score=0.55,
 
     return got.sort_values(["publishedAt_dt","final_score"], ascending=[False, False]).reset_index(drop=True)
 
-# ========================= LINK LOGGING (via redirect lokal) =========================
-def _b64enc(s):
-    try: return base64.urlsafe_b64encode((s or "").encode()).decode()
-    except Exception: return ""
-def _b64dec(s):
-    try: return base64.urlsafe_b64decode((s or "").encode()).decode()
-    except Exception: return ""
+# ========================= TOMBOL BACA (catat klik + buka artikel) =========================
+def _key_for(url, query):
+    raw = f"{url}|{query}"
+    return hashlib.md5(raw.encode("utf-8")).hexdigest()[:10]
 
-def _new_token():
-    return uuid.uuid4().hex[:12]
-
-def make_logged_link(url, query, label="Baca selengkapnya"):
-    # klik -> pindah ke URL internal ?go=...&q=...&t=token ; app mencatat (di memori) & membuka artikel
-    token = _new_token()
-    return (
-        f'<a class="cta" href="?go={_b64enc(url)}&q={_b64enc(query)}&t={token}" '
-        f'target="_self" rel="nofollow">{label}</a>'
-    )
+def render_read_button(url: str, query: str, label: str = "Baca selengkapnya"):
+    btn_key = f"read_{_key_for(url, query)}"
+    if st.button(label, key=btn_key):
+        # catat klik di memori session; akan dipersist saat ganti topik
+        S.clicked_by_query.setdefault(query, set()).add(url)
+        # buka artikel di TAB BARU (dianggap user gesture, aman dari popup blocker)
+        safe = json.dumps(url if not url.startswith("//") else "https:" + url)
+        components.html(
+            f"<script>try{{window.open({safe}, '_blank');}}catch(e){{}}</script>",
+            height=0,
+        )
 
 # ========================= APP =========================
 def main():
-    # Tangkap redirect lokal ?go=... (perbaikan: token sekali pakai + clear param + arahkan jendela TERATAS)
-    try:
-        params = st.query_params  # Streamlit >= 1.38
-    except Exception:
-        params = st.experimental_get_query_params()
-
-    if "go" in params:
-        raw_go = params["go"][0] if isinstance(params["go"], list) else params["go"]
-        raw_q  = params.get("q", [""])[0] if isinstance(params.get("q", [""]), list) else params.get("q", "")
-        token  = params.get("t", [""])[0] if isinstance(params.get("t", [""]), list) else params.get("t", "")
-
-        url = _b64dec(raw_go) or ""
-        q   = _b64dec(raw_q) or ""
-
-        # Normalisasi URL tanpa skema (mis. //detik.com/..)
-        if url.startswith("//"):
-            url = "https:" + url
-
-        already = token in S.processed_redirect_tokens
-        if not already and url:
-            S.processed_redirect_tokens.add(token)
-            # catat klik ke memori session (akan dipersist saat ganti topik)
-            S.clicked_by_query.setdefault(q, set()).add(url)
-
-            # Bersihkan query param di URL app, lalu arahkan jendela TERATAS ke artikel (bukan iframe)
-            safe_url_js = json.dumps(url)
-            safe_token_js = json.dumps(token)
-            components.html(
-                f"""
-                <script>
-                  (function(){{
-                    try {{
-                      const base = window.location.href.split('?')[0];
-                      window.history.replaceState({{}}, "", base);
-                    }} catch(e) {{}}
-                    try {{
-                      const key = "redir_done_" + {safe_token_js};
-                      if (!sessionStorage.getItem(key)) {{
-                        sessionStorage.setItem(key, "1");
-                        window.top.location.replace({safe_url_js});
-                      }}
-                    }} catch(e) {{
-                      try {{ window.top.location.href = {safe_url_js}; }} catch(_e) {{}}
-                    }}
-                  }})();
-                </script>
-                """,
-                height=0,
-            )
-            st.stop()
-        else:
-            # token sudah diproses / URL kosong -> hanya bersihkan query param
-            components.html(
-                """
-                <script>
-                  (function(){
-                    try {
-                      const base = window.location.href.split('?')[0];
-                      window.history.replaceState({}, "", base);
-                    } catch(e) {}
-                  })();
-                </script>
-                """,
-                height=0,
-            )
-            st.stop()
-
     st.title("📰 Sistem Rekomendasi Berita")
     st.markdown(
         "Aplikasi ini merekomendasikan berita dari Detik, CNN Indonesia, dan Kompas "
@@ -777,7 +706,7 @@ def main():
     else:
         st.sidebar.info("Model belum bisa dilatih karena riwayat tidak mencukupi.")
 
-    # ============== PENCARIAN PER TANGGAL (tanpa logging, link biasa) ==============
+    # ============== PENCARIAN PER TANGGAL (tautan biasa, tanpa logging klik) ==============
     st.header("📚 Pencarian Berita per Tanggal")
     grouped_queries = get_recent_queries_by_days(USER_ID, S.history, days=3)
 
@@ -843,8 +772,8 @@ def main():
                     st.write(f"Waktu: *{format_display_time(row.get('publishedAt',''))}*")
                     skor = row.get("final_score", row.get("sbert_score", 0.0))
                     st.write(f"Skor: `{float(skor):.2f}`")
-                    # tombol logging (klik -> catat ke memori + buka artikel; persist saat ganti topik)
-                    st.markdown(make_logged_link(row["url"], q_top), unsafe_allow_html=True)
+                    # tombol klik -> catat (memori) + buka tab baru; commit saat ganti topik
+                    render_read_button(row["url"], q_top)
                     st.markdown("---")
     else:
         st.info("🔥 Tidak ada topik yang sering dicari dalam 3 hari terakhir.")
@@ -863,7 +792,7 @@ def main():
             if is_topic_change:
                 S.topic_change_counter += 1
 
-            # 1) simpan cohort "Rekomendasi Hari Ini" (persist saat ganti topik)
+            # 1) persist cohort "Rekomendasi Hari Ini" saat ganti topik
             try:
                 if S.trending_query and not S.trending_results_df.empty:
                     clicked_trending = list(S.clicked_by_query.get(S.trending_query, set()))
@@ -876,7 +805,7 @@ def main():
             except Exception:
                 pass
 
-            # 2) simpan hasil pencarian sebelumnya (persist saat ganti topik)
+            # 2) persist hasil pencarian sebelumnya saat ganti topik
             if S.current_query and not S.current_recommended_results.empty:
                 try:
                     clicked_prev = list(S.clicked_by_query.get(S.current_query, set()))
@@ -923,7 +852,7 @@ def main():
                 st.write(f"Waktu: *{format_display_time(row.get('publishedAt',''))}*")
                 skor = row.get("final_score", row.get("sbert_score", 0.0))
                 st.write(f"Skor: `{float(skor):.2f}`")
-                st.markdown(make_logged_link(row["url"], S.current_query), unsafe_allow_html=True)
+                render_read_button(row["url"], S.current_query)
                 st.markdown("---")
 
 if __name__ == "__main__":
