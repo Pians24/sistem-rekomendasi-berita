@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 import streamlit as st
-import re, json, time, random, requests, base64, urllib.parse, uuid, hashlib
+import re, json, time, random, requests, urllib.parse, hashlib
 import pandas as pd
 import pytz
 import feedparser
@@ -39,12 +39,6 @@ for k, v in {
     "trending_query": "",
     "topic_change_counter": 0,
     "per_tanggal_done_counter": 0,
-    # UX flags
-    "just_clicked": False,        # untuk early-exit habis klik
-    "last_opened_url": "",
-    # commit modes
-    "commit_mode": "Ganti topik", # "Ganti topik" | "Langsung" | "Idle 15 detik"
-    "_last_click_ts": 0.0,        # timestamp klik terakhir (untuk idle-commit)
 }.items():
     if k not in S:
         S[k] = v
@@ -285,7 +279,7 @@ def format_display_time(s):
 def scrape_detik(query, max_articles=15):
     data, sess = [], make_session()
     try:
-        search_url = f"https://www.detik.com/search/searchall?query={requests.utils.quote(query)}"
+        search_url = f"https://www.detik.com/search/searchall?query={urllib.parse.quote(query)}"
         res = sess.get(search_url, timeout=15)
         if res.status_code == 200:
             soup = BeautifulSoup(res.content, "html.parser")
@@ -352,7 +346,7 @@ def scrape_detik(query, max_articles=15):
 @st.cache_data(show_spinner="Mencari berita di CNN...", ttl=300)
 def scrape_cnn_fixed(query, max_results=12):
     urls = [
-        f"https://www.cnnindonesia.com/search?query={requests.utils.quote(query)}",
+        f"https://www.cnnindonesia.com/search?query={urllib.parse.quote(query)}",
         "https://www.cnnindonesia.com/nasional/rss","https://www.cnnindonesia.com/internasional/rss",
         "https://www.cnnindonesia.com/ekonomi/rss","https://www.cnnindonesia.com/olahraga/rss",
         "https://www.cnnindonesia.com/gaya-hidup/rss",
@@ -417,7 +411,7 @@ def scrape_cnn_fixed(query, max_results=12):
 def scrape_kompas_fixed(query, max_articles=12):
     data, sess = [], make_session()
     try:
-        search_url = f"https://search.kompas.com/search?q={requests.utils.quote(query)}"
+        search_url = f"https://search.kompas.com/search?q={urllib.parse.quote(query)}"
         res = sess.get(search_url, timeout=20)
         if res.status_code == 200:
             soup = BeautifulSoup(res.text, "html.parser")
@@ -655,17 +649,6 @@ def recommend(df, query, clf, n_per_source=3, min_score=0.55,
 
     return got.sort_values(["publishedAt_dt","final_score"], ascending=[False, False]).reset_index(drop=True)
 
-# ========================= UTIL KOMIT =========================
-def _commit_for_query(q, df):
-    try:
-        clicked = list(S.clicked_by_query.get(q, set()))
-        if clicked and df is not None and not df.empty:
-            save_interaction_to_github(USER_ID, q, df, clicked)
-            # setelah commit, kosongkan yang sudah tersimpan
-            S.clicked_by_query.pop(q, None)
-    except Exception:
-        pass
-
 # ========================= TOMBOL BACA (catat klik + buka artikel) =========================
 def _key_for(url, query):
     raw = f"{url}|{query}"
@@ -674,42 +657,31 @@ def _key_for(url, query):
 def render_read_button(url: str, query: str, label: str = "Baca selengkapnya"):
     btn_key = f"read_{_key_for(url, query)}"
     if st.button(label, key=btn_key):
-        # 1) catat klik (label=1 dihitung saat commit)
+        # tandai sebagai diklik (label = 1 saat persist)
         S.clicked_by_query.setdefault(query, set()).add(url)
-        S.just_clicked = True
-        S.last_opened_url = "https:" + url if url.startswith("//") else url
-        S._last_click_ts = time.time()
 
-        # 2) buka artikel di TAB BARU (anchor programatik -> aman popup blocker)
-        safe = json.dumps(S.last_opened_url)
+        # buka tab baru via anchor (user gesture → aman dari popup blocker)
+        opened = "https:" + url if url.startswith("//") else url
+        safe = json.dumps(opened)
         components.html(
-            f"""
+            """
             <script>
-              (function(){{
-                try {{
-                  var url = {safe};
-                  var a = document.createElement('a');
-                  a.href = url;
-                  a.target = '_blank';
-                  a.rel = 'noopener noreferrer';
-                  a.style.display = 'none';
-                  document.body.appendChild(a);
-                  a.click();
-                }} catch(e) {{
-                  try {{ window.open({safe}, '_blank'); }} catch(_e) {{}}
-                }}
-              }})();
+            (function(){
+              try{
+                var url = %s;
+                var a = document.createElement('a');
+                a.href = url; a.target = '_blank'; a.rel = 'noopener noreferrer';
+                a.style.display='none'; document.body.appendChild(a); a.click();
+              }catch(e){
+                try{ window.open(%s, '_blank'); }catch(_e){}
+              }
+            })();
             </script>
-            """,
+            """ % (safe, safe),
             height=0,
         )
-
-        # 3) commit langsung jika mode "Langsung"
-        if S.commit_mode == "Langsung":
-            if S.current_query and S.current_query == query and not S.current_recommended_results.empty:
-                _commit_for_query(query, S.current_recommended_results)
-            elif S.trending_query and S.trending_query == query and not S.trending_results_df.empty:
-                _commit_for_query(query, S.trending_results_df)
+        # feedback kecil (opsional)
+        st.caption("✅ Klik tercatat & tab baru dibuka.")
 
 # ========================= APP =========================
 def main():
@@ -733,41 +705,15 @@ def main():
         unsafe_allow_html=True,
     )
 
-    # === Early-exit habis klik: hentikan rerun berat ===
-    if S.get("just_clicked", False):
-        st.success("Artikel dibuka di tab baru. Klik kamu tercatat ✅")
-        if S.get("last_opened_url"):
-            st.markdown(f"[Buka lagi artikel]({S.last_opened_url})")
-        S.just_clicked = False
-        st.stop()
-
-    # === Sidebar: kontrol cache & mode commit ===
+    # Sidebar
     if st.sidebar.button("Bersihkan Cache & Muat Ulang"):
         st.cache_data.clear(); st.cache_resource.clear()
         st.success("Cache dibersihkan. Memuat ulang…"); time.sleep(1); st.rerun()
 
-    S.commit_mode = st.sidebar.selectbox(
-        "Mode simpan klik",
-        ["Ganti topik", "Langsung", "Idle 15 detik"],
-        index=["Ganti topik", "Langsung", "Idle 15 detik"].index(S.get("commit_mode","Ganti topik"))
-    )
-
-    # === Idle-commit: jika user diam >= 15 detik setelah klik ===
-    if S.commit_mode == "Idle 15 detik":
-        last = S.get("_last_click_ts", 0.0)
-        if last and (time.time() - last) >= 15:
-            # commit untuk query aktif
-            if S.current_query and not S.current_recommended_results.empty:
-                _commit_for_query(S.current_query, S.current_recommended_results)
-            if S.trending_query and not S.trending_results_df.empty:
-                _commit_for_query(S.trending_query, S.trending_results_df)
-            S._last_click_ts = 0.0
-
-    # === History awal ===
     if S.history.empty:
         S.history = load_history_from_github()
 
-    # === Model personalisasi ===
+    # Model personalisasi
     st.sidebar.header("Model Personalisasi")
     try:
         df_train = build_training_data(USER_ID)
@@ -811,7 +757,7 @@ def main():
                                 st.markdown(f"**[{src}]** [{row['title']}]({row['url']})")
                                 st.write(f"Waktu Publikasi: *{format_display_time(row.get('publishedAt',''))}*")
                                 skor = row.get("final_score", row.get("sbert_score", 0.0))
-                                st.write(f"Skor: `{float(skor):.2f}`")
+                                st.write(f"Skor: `{float(skor):.2f}``)
                                 st.markdown("---")
     else:
         st.info("Belum ada riwayat pencarian pada 3 hari terakhir.")
