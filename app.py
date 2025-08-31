@@ -368,7 +368,7 @@ def scrape_cnn_fixed(query, max_results=12):
                     real, content, title_html = fetch_time_content_title(sess, link)
                     if real: pub = real
                     if not pub: continue
-                    if not title or len(title) < 3:
+                    if not title atau len(title) < 3:
                         title = title_html or slug_to_title(link)
                     if not is_relevant_strict(query, title, summary, content, link): continue
                     results.append({
@@ -415,7 +415,7 @@ def scrape_kompas_fixed(query, max_articles=12):
         res = sess.get(search_url, timeout=20)
         if res.status_code == 200:
             soup = BeautifulSoup(res.text, "html.parser")
-            items = soup.select("div.articleItem") or soup.select("div.article__list, li.article__item, div.iso__item")
+            items = soup.select("div.articleItem") atau soup.select("div.article__list, li.article__item, div.iso__item")
             for it in items[:max_articles]:
                 try:
                     a = it.select_one("a.article-link, a.article__link, a[href]")
@@ -467,7 +467,7 @@ def scrape_kompas_fixed(query, max_articles=12):
                     real, content, title_html = fetch_time_content_title(sess, link)
                     if real: pub = real
                     if not pub: continue
-                    if not title or len(title) < 3:
+                    if not title atau len(title) < 3:
                         title = title_html or slug_to_title(link)
                     if not is_relevant_strict(query, title, summary, content, link): continue
                     data.append({
@@ -640,7 +640,6 @@ def recommend(df, query, clf, n_per_source=3, min_score=0.55,
     def _top_n(x):
         return x.sort_values(["publishedAt_dt","final_score"], ascending=[False, False]).head(n_per_source)
 
-    # agar kompatibel dengan berbagai versi pandas, tanpa include_groups
     if per_source_group:
         got = filtered.groupby("source", group_keys=False).apply(_top_n)
     else:
@@ -660,7 +659,7 @@ def _new_token():
     return uuid.uuid4().hex[:12]
 
 def make_logged_link(url, query, label="Baca selengkapnya"):
-    # klik -> pindah ke URL internal ?go=...&q=...&t=token ; app mencatat & membuka artikel
+    # klik -> pindah ke URL internal ?go=...&q=...&t=token ; app mencatat (di memori) & membuka artikel
     token = _new_token()
     return (
         f'<a class="cta" href="?go={_b64enc(url)}&q={_b64enc(query)}&t={token}" '
@@ -669,7 +668,7 @@ def make_logged_link(url, query, label="Baca selengkapnya"):
 
 # ========================= APP =========================
 def main():
-    # Tangkap redirect lokal ?go=... (diperbaiki: token sekali pakai + clear param + 1x navigate)
+    # Tangkap redirect lokal ?go=... (perbaikan: token sekali pakai + clear param + arahkan jendela TERATAS)
     try:
         params = st.query_params  # Streamlit >= 1.38
     except Exception:
@@ -680,26 +679,22 @@ def main():
         raw_q  = params.get("q", [""])[0] if isinstance(params.get("q", [""]), list) else params.get("q", "")
         token  = params.get("t", [""])[0] if isinstance(params.get("t", [""]), list) else params.get("t", "")
 
-        url = _b64dec(raw_go)
-        q   = _b64dec(raw_q)
+        url = _b64dec(raw_go) or ""
+        q   = _b64dec(raw_q) or ""
+
+        # Normalisasi URL tanpa skema (mis. //detik.com/..)
+        if url.startswith("//"):
+            url = "https:" + url
 
         already = token in S.processed_redirect_tokens
         if not already and url:
             S.processed_redirect_tokens.add(token)
-            # catat klik ke memori session
+            # catat klik ke memori session (akan dipersist saat ganti topik)
             S.clicked_by_query.setdefault(q, set()).add(url)
 
-            # (Opsional) Jika ingin langsung persist ke GitHub saat klik, aktifkan blok ini:
-            # try:
-            #     if q and not S.trending_results_df.empty and q == S.trending_query:
-            #         save_interaction_to_github(USER_ID, q, S.trending_results_df, list(S.clicked_by_query.get(q, set())))
-            #     if q and not S.current_recommended_results.empty and q == S.current_query:
-            #         save_interaction_to_github(USER_ID, q, S.current_recommended_results, list(S.clicked_by_query.get(q, set())))
-            # except Exception:
-            #     pass
-
-            # Bersihkan query param di URL lalu navigasi 1x (TAB YANG SAMA) ke artikel
+            # Bersihkan query param di URL app, lalu arahkan jendela TERATAS ke artikel (bukan iframe)
             safe_url_js = json.dumps(url)
+            safe_token_js = json.dumps(token)
             components.html(
                 f"""
                 <script>
@@ -709,8 +704,14 @@ def main():
                       window.history.replaceState({{}}, "", base);
                     }} catch(e) {{}}
                     try {{
-                      window.location.assign({safe_url_js});
-                    }} catch(e) {{}}
+                      const key = "redir_done_" + {safe_token_js};
+                      if (!sessionStorage.getItem(key)) {{
+                        sessionStorage.setItem(key, "1");
+                        window.top.location.replace({safe_url_js});
+                      }}
+                    }} catch(e) {{
+                      try {{ window.top.location.href = {safe_url_js}; }} catch(_e) {{}}
+                    }}
                   }})();
                 </script>
                 """,
@@ -718,7 +719,7 @@ def main():
             )
             st.stop()
         else:
-            # sudah diproses atau url kosong -> bersihkan query param & hentikan
+            # token sudah diproses / URL kosong -> hanya bersihkan query param
             components.html(
                 """
                 <script>
@@ -842,7 +843,7 @@ def main():
                     st.write(f"Waktu: *{format_display_time(row.get('publishedAt',''))}*")
                     skor = row.get("final_score", row.get("sbert_score", 0.0))
                     st.write(f"Skor: `{float(skor):.2f}`")
-                    # tombol logging (klik -> catat + pindah 1x)
+                    # tombol logging (klik -> catat ke memori + buka artikel; persist saat ganti topik)
                     st.markdown(make_logged_link(row["url"], q_top), unsafe_allow_html=True)
                     st.markdown("---")
     else:
@@ -862,7 +863,7 @@ def main():
             if is_topic_change:
                 S.topic_change_counter += 1
 
-            # 1) simpan cohort "Rekomendasi Hari Ini"
+            # 1) simpan cohort "Rekomendasi Hari Ini" (persist saat ganti topik)
             try:
                 if S.trending_query and not S.trending_results_df.empty:
                     clicked_trending = list(S.clicked_by_query.get(S.trending_query, set()))
@@ -875,7 +876,7 @@ def main():
             except Exception:
                 pass
 
-            # 2) simpan hasil pencarian sebelumnya (kalau ada)
+            # 2) simpan hasil pencarian sebelumnya (persist saat ganti topik)
             if S.current_query and not S.current_recommended_results.empty:
                 try:
                     clicked_prev = list(S.clicked_by_query.get(S.current_query, set()))
