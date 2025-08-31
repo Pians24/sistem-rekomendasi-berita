@@ -536,43 +536,59 @@ def save_interaction_to_github(user_id, query, all_articles, clicked_urls):
     updated = json.dumps(history_list, indent=2, ensure_ascii=False)
     repo.update_file(st.secrets["file_path"], f"Update history for {query}", updated, contents.sha)
 
-# ========================= ANALITIK =========================
+# ========================= ANALITIK (dibatasi 3 tanggal kalender) =========================
 def get_recent_queries_by_days(user_id, df, days=3):
     if df.empty or "user_id" not in df.columns or "click_time" not in df.columns:
         return {}
     d = df[df["user_id"] == user_id].copy()
     d = d.drop_duplicates(subset=["user_id","query","click_time"])
+
+    # parse waktu ke timezone JKT
     d["ts"] = pd.to_datetime(d["click_time"], format="%A, %d %B %Y %H:%M", errors="coerce")
     d["ts"] = d["ts"].fillna(pd.to_datetime(d["click_time"], errors="coerce"))
     d = d.dropna(subset=["ts"])
-    now = datetime.now()
-    cutoff = now - timedelta(days=days)
-    d = d[d["ts"] >= cutoff]
-    if d.empty: return {}
-    d["date"] = d["ts"].dt.strftime("%d %B %Y")
+
+    # batasi 3 tanggal kalender (hari ini + 2 hari sebelumnya) di Asia/Jakarta
+    today_jkt = datetime.now(TZ_JKT).date()
+    cutoff_date = today_jkt - timedelta(days=days - 1)
+    d = d[d["ts"].dt.tz_localize(TZ_JKT, nonexistent='NaT', ambiguous='NaT', errors='coerce').dt.date >= cutoff_date] \
+        if d["ts"].dt.tz is None else d[d["ts"].dt.tz_convert(TZ_JKT).dt.date >= cutoff_date]
+
+    d = d.dropna(subset=["ts"])
+    d["date"] = d["ts"].dt.tz_localize(TZ_JKT, nonexistent='NaT', ambiguous='NaT', errors='coerce').dt.strftime("%d %B %Y") \
+        if d["ts"].dt.tz is None else d["ts"].dt.tz_convert(TZ_JKT).dt.strftime("%d %B %Y")
+
     grouped = d.groupby("date")["query"].unique().to_dict()
     sorted_dates = sorted(grouped.keys(), key=lambda x: datetime.strptime(x, "%d %B %Y"), reverse=True)
     return {k: grouped[k] for k in sorted_dates}
+
 
 def trending_by_query_frequency(user_id, df, days=3):
     if df.empty or "user_id" not in df.columns or "query" not in df.columns or "click_time" not in df.columns:
         return []
     d = df[df["user_id"] == user_id].copy()
     d = d.drop_duplicates(subset=["user_id","query","click_time"])
+
     d["ts"] = pd.to_datetime(d["click_time"], format="%A, %d %B %Y %H:%M", errors="coerce")
     d["ts"] = d["ts"].fillna(pd.to_datetime(d["click_time"], errors="coerce"))
     d = d.dropna(subset=["ts"])
-    now = datetime.now()
-    cutoff = now - timedelta(days=days)
-    d = d[d["ts"] >= cutoff]
-    if d.empty: return []
+
+    # batasi 3 tanggal kalender (JKT)
+    today_jkt = datetime.now(TZ_JKT).date()
+    cutoff_date = today_jkt - timedelta(days=days - 1)
+    d = d[d["ts"].dt.tz_localize(TZ_JKT, nonexistent='NaT', ambiguous='NaT', errors='coerce').dt.date >= cutoff_date] \
+        if d["ts"].dt.tz is None else d[d["ts"].dt.tz_convert(TZ_JKT).dt.date >= cutoff_date]
+
     agg = d.groupby("query").agg(
-        total=("query","count"),
-        days=("ts", lambda s: s.dt.date.nunique()),
-        last_ts=("ts","max")
+        total=("query", "count"),
+        days=("ts", lambda s: (s.dt.tz_localize(TZ_JKT, nonexistent='NaT', ambiguous='NaT', errors='coerce').dt.date
+                               if s.dt.tz is None else s.dt.tz_convert(TZ_JKT).dt.date).nunique()),
+        last_ts=("ts", "max")
     ).reset_index()
+
     agg = agg.sort_values(by=["days","total","last_ts"], ascending=[False, False, False])
     return list(agg[["query","total"]].itertuples(index=False, name=None))
+
 
 # ========================= TRAIN & RECOMMEND =========================
 def build_training_data(user_id):
