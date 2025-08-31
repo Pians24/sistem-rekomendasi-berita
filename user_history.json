@@ -702,7 +702,8 @@
     "click_time": "Wednesday, 27 August 2025 02:28",
     "label": 1,
     "publishedAt": "2025-08-25 11:48"
-  },{
+  },
+  {
     "user_id": "user_01",
     "query": "demo DPR",
     "title": "3 Admin Grup WA yang Ajak 197 Pelajar Bogor Demo ke DPR Diamankan",
@@ -1283,6 +1284,28 @@
     "source": "Detik",
     "click_time": "Sunday, 31 August 2025 23:30",
     "publishedAt": "2025-08-31 17:09",
+    "label": 0
+  },
+  {
+    "user_id": "user_01",
+    "query": "demo DPR",
+    "title": "Pedagang di Depan DPR Berharap Demo Anarkistis Tak Lagi Terjadi",
+    "url": "https://megapolitan.kompas.com/read/2025/08/31/21035321/pedagang-di-depan-dpr-berharap-demo-anarkistis-tak-lagi-terjadi",
+    "content": "Pedagang di Depan DPR Berharap Demo Anarkistis Tak Lagi Terjadi",
+    "source": "Kompas",
+    "click_time": "Monday, 01 September 2025 00:04",
+    "publishedAt": "2025-08-31 21:03",
+    "label": 0
+  },
+  {
+    "user_id": "user_01",
+    "query": "demo DPR",
+    "title": "Soal Isu Kpi Larang Siarkan Demo Dpr Pakar Umy Khawatirkan Hal Ini",
+    "url": "https://www.detik.com/edu/edutainment/d-8088735/soal-isu-kpi-larang-siarkan-demo-dpr-pakar-umy-khawatirkan-hal-ini",
+    "content": "Soal Isu Kpi Larang Siarkan Demo Dpr Pakar Umy Khawatirkan Hal Ini Beredar isu surat edaran dari KPI tentang larangan penyiaran aksi demonstrasi. Jika ini terjadi, pakar mengkhawatirkan kebebasan pers akan terancam.",
+    "source": "Detik",
+    "click_time": "Monday, 01 September 2025 00:04",
+    "publishedAt": "2025-08-31 16:09",
     "label": 0
   }
 ]
