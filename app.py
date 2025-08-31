@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 import streamlit as st
-import re, json, time, random, requests, base64, urllib.parse
+import re, json, time, random, requests, base64, urllib.parse, uuid
 import pandas as pd
 import pytz
 import feedparser
@@ -39,6 +39,8 @@ for k, v in {
     "trending_query": "",
     "topic_change_counter": 0,
     "per_tanggal_done_counter": 0,
+    # token yang sudah diproses untuk mencegah eksekusi ganda saat rerun
+    "processed_redirect_tokens": set(),
 }.items():
     if k not in S:
         S[k] = v
@@ -85,7 +87,7 @@ def preprocess_text(t):
     return t
 
 # ========================= RELEVANSI =========================
-def _keywords(tokens_min3, hay): 
+def _keywords(tokens_min3, hay):
     return sum(tok in hay for tok in tokens_min3)
 
 def is_relevant_strict(query, title, summary, content, url):
@@ -488,7 +490,7 @@ def scrape_all_sources(query):
 
 # ========================= GITHUB HISTORY =========================
 @st.cache_resource(ttl=60)
-def get_github_client(): 
+def get_github_client():
     return Github(st.secrets["github_token"])
 
 @st.cache_data(ttl=60)
@@ -638,12 +640,15 @@ def recommend(df, query, clf, n_per_source=3, min_score=0.55,
     def _top_n(x):
         return x.sort_values(["publishedAt_dt","final_score"], ascending=[False, False]).head(n_per_source)
 
-    got = filtered.groupby("source", group_keys=False).apply(_top_n, include_groups=False) if per_source_group \
-          else filtered.sort_values(["publishedAt_dt","final_score"], ascending=[False, False]).head(3*n_per_source)
+    # agar kompatibel dengan berbagai versi pandas, tanpa include_groups
+    if per_source_group:
+        got = filtered.groupby("source", group_keys=False).apply(_top_n)
+    else:
+        got = filtered.sort_values(["publishedAt_dt","final_score"], ascending=[False, False]).head(3*n_per_source)
 
     return got.sort_values(["publishedAt_dt","final_score"], ascending=[False, False]).reset_index(drop=True)
 
-# ========================= LINK LOGGING (tanpa onclick, via redirect lokal) =========================
+# ========================= LINK LOGGING (via redirect lokal) =========================
 def _b64enc(s):
     try: return base64.urlsafe_b64encode((s or "").encode()).decode()
     except Exception: return ""
@@ -651,42 +656,83 @@ def _b64dec(s):
     try: return base64.urlsafe_b64decode((s or "").encode()).decode()
     except Exception: return ""
 
+def _new_token():
+    return uuid.uuid4().hex[:12]
+
 def make_logged_link(url, query, label="Baca selengkapnya"):
-    # klik -> pindah ke URL internal ?go=... ; app mencatat & membuka artikel
-    return f'<a class="cta" href="?go={_b64enc(url)}&q={_b64enc(query)}" target="_self">{label}</a>'
+    # klik -> pindah ke URL internal ?go=...&q=...&t=token ; app mencatat & membuka artikel
+    token = _new_token()
+    return (
+        f'<a class="cta" href="?go={_b64enc(url)}&q={_b64enc(query)}&t={token}" '
+        f'target="_self" rel="nofollow">{label}</a>'
+    )
 
 # ========================= APP =========================
 def main():
-    # Tangkap redirect lokal ?go=...
+    # Tangkap redirect lokal ?go=... (diperbaiki: token sekali pakai + clear param + 1x navigate)
     try:
         params = st.query_params  # Streamlit >= 1.38
     except Exception:
         params = st.experimental_get_query_params()
 
     if "go" in params:
-        raw = params["go"][0] if isinstance(params["go"], list) else params["go"]
-        raw_q = params.get("q", [""])[0] if isinstance(params.get("q", [""]), list) else params.get("q", "")
-        url = _b64dec(raw); q = _b64dec(raw_q)
-        if url:
+        raw_go = params["go"][0] if isinstance(params["go"], list) else params["go"]
+        raw_q  = params.get("q", [""])[0] if isinstance(params.get("q", [""]), list) else params.get("q", "")
+        token  = params.get("t", [""])[0] if isinstance(params.get("t", [""]), list) else params.get("t", "")
+
+        url = _b64dec(raw_go)
+        q   = _b64dec(raw_q)
+
+        already = token in S.processed_redirect_tokens
+        if not already and url:
+            S.processed_redirect_tokens.add(token)
+            # catat klik ke memori session
             S.clicked_by_query.setdefault(q, set()).add(url)
-        # buka tab artikel & bersihkan query params
-        safe_url_js = json.dumps(url)
-        components.html(
-            f"""
-            <script>
-              (function(){{
-                try{{ window.open({safe_url_js}, '_blank'); }}catch(e){{}}
-                try{{
-                  const base = window.location.href.split('?')[0];
-                  window.history.replaceState({{}}, "", base);
-                  window.location.href = base;
-                }}catch(e){{}}
-              }})();
-            </script>
-            """,
-            height=0,
-        )
-        st.stop()
+
+            # (Opsional) Jika ingin langsung persist ke GitHub saat klik, aktifkan blok ini:
+            # try:
+            #     if q and not S.trending_results_df.empty and q == S.trending_query:
+            #         save_interaction_to_github(USER_ID, q, S.trending_results_df, list(S.clicked_by_query.get(q, set())))
+            #     if q and not S.current_recommended_results.empty and q == S.current_query:
+            #         save_interaction_to_github(USER_ID, q, S.current_recommended_results, list(S.clicked_by_query.get(q, set())))
+            # except Exception:
+            #     pass
+
+            # Bersihkan query param di URL lalu navigasi 1x (TAB YANG SAMA) ke artikel
+            safe_url_js = json.dumps(url)
+            components.html(
+                f"""
+                <script>
+                  (function(){{
+                    try {{
+                      const base = window.location.href.split('?')[0];
+                      window.history.replaceState({{}}, "", base);
+                    }} catch(e) {{}}
+                    try {{
+                      window.location.assign({safe_url_js});
+                    }} catch(e) {{}}
+                  }})();
+                </script>
+                """,
+                height=0,
+            )
+            st.stop()
+        else:
+            # sudah diproses atau url kosong -> bersihkan query param & hentikan
+            components.html(
+                """
+                <script>
+                  (function(){
+                    try {
+                      const base = window.location.href.split('?')[0];
+                      window.history.replaceState({}, "", base);
+                    } catch(e) {}
+                  })();
+                </script>
+                """,
+                height=0,
+            )
+            st.stop()
 
     st.title("📰 Sistem Rekomendasi Berita")
     st.markdown(
@@ -796,7 +842,7 @@ def main():
                     st.write(f"Waktu: *{format_display_time(row.get('publishedAt',''))}*")
                     skor = row.get("final_score", row.get("sbert_score", 0.0))
                     st.write(f"Skor: `{float(skor):.2f}`")
-                    # tombol logging
+                    # tombol logging (klik -> catat + pindah 1x)
                     st.markdown(make_logged_link(row["url"], q_top), unsafe_allow_html=True)
                     st.markdown("---")
     else:
