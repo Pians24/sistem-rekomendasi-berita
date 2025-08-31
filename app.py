@@ -368,7 +368,7 @@ def scrape_cnn_fixed(query, max_results=12):
                     real, content, title_html = fetch_time_content_title(sess, link)
                     if real: pub = real
                     if not pub: continue
-                    if not title atau len(title) < 3:
+                    if not title or len(title) < 3:
                         title = title_html or slug_to_title(link)
                     if not is_relevant_strict(query, title, summary, content, link): continue
                     results.append({
@@ -415,7 +415,7 @@ def scrape_kompas_fixed(query, max_articles=12):
         res = sess.get(search_url, timeout=20)
         if res.status_code == 200:
             soup = BeautifulSoup(res.text, "html.parser")
-            items = soup.select("div.articleItem") atau soup.select("div.article__list, li.article__item, div.iso__item")
+            items = soup.select("div.articleItem") or soup.select("div.article__list, li.article__item, div.iso__item")
             for it in items[:max_articles]:
                 try:
                     a = it.select_one("a.article-link, a.article__link, a[href]")
@@ -467,7 +467,7 @@ def scrape_kompas_fixed(query, max_articles=12):
                     real, content, title_html = fetch_time_content_title(sess, link)
                     if real: pub = real
                     if not pub: continue
-                    if not title atau len(title) < 3:
+                    if not title or len(title) < 3:
                         title = title_html or slug_to_title(link)
                     if not is_relevant_strict(query, title, summary, content, link): continue
                     data.append({
