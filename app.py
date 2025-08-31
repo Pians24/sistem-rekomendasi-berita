@@ -208,7 +208,7 @@ def _parse_id_date_text(text):
 def extract_published_at_from_article_html(art_soup, url=""):
     try:
         for s in art_soup.find_all("script", attrs={"type":"application/ld+json"}):
-            raw = (s.string atau s.text atau "").strip()  # aman untuk BeautifulSoup; "atau" di sini bukan Python
+            raw = (s.string or s.text or "").strip() 
             if not raw: 
                 continue
             data = json.loads(raw)
