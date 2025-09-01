@@ -1461,5 +1461,38 @@
     "click_time": "Monday, 01 September 2025 00:11",
     "publishedAt": "2025-08-31 08:05",
     "label": 0
+  },
+  {
+    "user_id": "user_01",
+    "query": "demo DPR",
+    "title": "Massa Mahasiswa Demo Di Dprd Ntt Tuntut Tolak Kenaikan Tunjangan Dpr",
+    "url": "https://news.detik.com/berita/d-8090388/massa-mahasiswa-demo-di-dprd-ntt-tuntut-tolak-kenaikan-tunjangan-dpr",
+    "content": "Massa Mahasiswa Demo Di Dprd Ntt Tuntut Tolak Kenaikan Tunjangan Dpr Massa mahasiswa dan organisasi masyarakat menggelar aksi demonstrasi di pintu masuk gedung DPRD NTT. Massa menolak kenaikan tunjangan anggota DPR RI.",
+    "source": "Detik",
+    "click_time": "Monday, 01 September 2025 13:48",
+    "publishedAt": "2025-09-01 13:24",
+    "label": 0
+  },
+  {
+    "user_id": "user_01",
+    "query": "demo DPR",
+    "title": "Ratusan Mahasiswa Demonstrasi di DPRD NTT",
+    "url": "https://www.cnnindonesia.com/nasional/20250901115808-20-1268739/ratusan-mahasiswa-demonstrasi-di-dprd-ntt",
+    "content": "Ratusan Mahasiswa Demonstrasi di DPRD NTT <img src=\"https://akcdn.detik.net.id/visual/2025/08/30/demo-di-kupang-1756556080969_169.jpeg?w=360&amp;q=90\" /> Ratusan mahasiswa dari 12 elemen menggelar aksi demonstrasi di depan Kantor DPRD NTT di Jalan El Tari, Kupang, Senin (1/9).",
+    "source": "CNN",
+    "click_time": "Monday, 01 September 2025 13:48",
+    "publishedAt": "2025-09-01 12:05",
+    "label": 0
+  },
+  {
+    "user_id": "user_01",
+    "query": "demo DPR",
+    "title": "[HOAKS] Anggota DPR Menemui Mahasiswa Saat Demo Agustus 2025",
+    "url": "https://www.kompas.com/cekfakta/read/2025/09/01/092200982/-hoaks-anggota-dpr-menemui-mahasiswa-saat-demo-agustus-2025",
+    "content": "[HOAKS] Anggota DPR Menemui Mahasiswa Saat Demo Agustus 2025",
+    "source": "Kompas",
+    "click_time": "Monday, 01 September 2025 13:48",
+    "publishedAt": "2025-09-01 09:22",
+    "label": 0
   }
 ]
