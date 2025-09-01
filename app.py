@@ -710,7 +710,7 @@ def main():
         st.sidebar.info("Model belum bisa dilatih karena riwayat tidak mencukupi.")
 
     # ---------- REKOMENDASI HARI INI (opsional, tetap ada) ----------
-    st.header("🔥 Rekomendasi Berita Hari Ini")
+    st.header("🔥 REKOMENDASI BERITA HARI INI")
     trends = trending_by_query_frequency(USER_ID, S.history, days=3)
     if trends:
         q_top, _ = trends[0]
@@ -738,7 +738,6 @@ def main():
                     skor = row.get("final_score", row.get("sbert_score", 0.0))
                     st.write(f"Skor: `{float(skor):.2f}`")
                     render_read_button(row["url"], q_top)
-                    st.caption(f"Kalau tab tidak terbuka: [Buka artikel]({row['url']})")
                     st.markdown("---")
     else:
         st.info("🔥 Tidak ada topik yang sering dicari dalam 3 hari terakhir.")
@@ -746,7 +745,7 @@ def main():
     st.markdown("---")
 
     # ---------- PENCARIAN BEBAS (fokus utama) ----------
-    st.header("🔍 Pencarian Berita")
+    st.header("🔍 PENCARIAN BERITA")
     with st.form(key="search_form", clear_on_submit=False):
         search_query = st.text_input("Ketik topik berita yang ingin Anda cari:", value=S.current_query)
         submitted = st.form_submit_button("Cari Berita")
@@ -810,7 +809,6 @@ def main():
                 skor = row.get("final_score", row.get("sbert_score", 0.0))
                 st.write(f"Skor: `{float(skor):.2f}`")
                 render_read_button(row["url"], S.current_query)
-                st.caption(f"Kalau tab tidak terbuka: [Buka artikel]({row['url']})")
                 st.markdown("---")
 
             # info kecil di bawah daftar: berapa yang sudah tercatat
@@ -821,7 +819,7 @@ def main():
     st.markdown("---")
 
     # ---------- PENCARIAN BERITA PER TANGGAL (read-only link) ----------
-    st.header("📚 Pencarian Berita per Tanggal")
+    st.header("📚 RIWAYAT PENCARIAN BERITA")
     grouped_queries = get_recent_queries_by_days(USER_ID, S.history, days=3)
     if grouped_queries:
         for date, queries in grouped_queries.items():
