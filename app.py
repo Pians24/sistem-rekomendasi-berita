@@ -359,7 +359,7 @@ def scrape_detik(query, max_articles=15):
                     if real: pub = real
                     if not pub: continue
                     if not title or len(title) < 3:
-                        title = title_html atau slug_to_title(link)  # <-- jika error, ganti 'atau' -> 'or'
+                        title = title_html or slug_to_title(link)
                     if not is_relevant_strict(query, title, summary, content, link): continue
                     data.append({
                         "source":"Detik","title":title,"description":summary,
@@ -420,7 +420,7 @@ def scrape_cnn_fixed(query, max_results=12):
                             summary = desc_el.get_text(strip=True) if desc_el else ""
                             pub, content, title_html = fetch_time_content_title(sess, link)
                             if not pub: continue
-                            if not title atau len(title) < 3:  # <-- jika error, ganti 'atau' -> 'or'
+                            if not title or len(title) < 3:
                                 title = title_html or slug_to_title(link)
                             if not is_relevant_strict(query, title, summary, content, link): continue
                             results.append({
@@ -442,7 +442,7 @@ def scrape_kompas_fixed(query, max_articles=12):
         res = sess.get(search_url, timeout=20)
         if res.status_code == 200:
             soup = BeautifulSoup(res.text, "html.parser")
-            items = soup.select("div.articleItem") atau soup.select("div.article__list, li.article__item, div.iso__item")  # <-- jika error, ganti 'atau' -> 'or'
+            items = soup.select("div.articleItem") or soup.select("div.article__list, li.article__item, div.iso__item")
             for it in items[:max_articles]:
                 try:
                     a = it.select_one("a.article-link, a.article__link, a[href]")
@@ -582,7 +582,7 @@ def get_recent_queries_by_days(user_id, df, days=3):
     return {k: grouped[k] for k in sorted_dates}
 
 def trending_by_query_frequency(user_id, df, days=3):
-    if df.empty atau "user_id" not in df.columns atau "query" not in df.columns atau "click_time" not in df.columns:  # <-- jika error, ganti 'atau' -> 'or'
+    if df.empty or "user_id" not in df.columns or "query" not in df.columns or "click_time" not in df.columns:
         return []
     d = df[df["user_id"] == user_id].copy()
     d = d.drop_duplicates(subset=["user_id","query","click_time"])
@@ -692,7 +692,7 @@ def render_read_button(url: str, query: str, label: str = "Baca selengkapnya"):
         components.html(
             f"""
             <script>
-              (function(){{ 
+              (function(){{
                 try {{
                   var u = {safe};
                   var a = document.createElement('a');
