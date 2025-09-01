@@ -1494,5 +1494,60 @@
     "click_time": "Monday, 01 September 2025 13:48",
     "publishedAt": "2025-09-01 09:22",
     "label": 0
+  },
+  {
+    "user_id": "user_01",
+    "query": "mulyani",
+    "title": "Sri Mulyani Buka Suara Usai Kediamannya Disatroni Perusuh",
+    "url": "https://money.kompas.com/read/2025/09/01/092604626/sri-mulyani-buka-suara-usai-kediamannya-disatroni-perusuh",
+    "content": "Sri Mulyani Buka Suara Usai Kediamannya Disatroni Perusuh",
+    "source": "Kompas",
+    "click_time": "Monday, 01 September 2025 13:48",
+    "publishedAt": "2025-09-01 09:26",
+    "label": 1
+  },
+  {
+    "user_id": "user_01",
+    "query": "mulyani",
+    "title": "Sri Mulyani Diisukan Mundur dari Kabinet Merah Putih, Benarkah?",
+    "url": "https://money.kompas.com/read/2025/09/01/082620826/sri-mulyani-diisukan-mundur-dari-kabinet-merah-putih-benarkah",
+    "content": "Sri Mulyani Diisukan Mundur dari Kabinet Merah Putih, Benarkah?",
+    "source": "Kompas",
+    "click_time": "Monday, 01 September 2025 13:48",
+    "publishedAt": "2025-09-01 08:26",
+    "label": 0
+  },
+  {
+    "user_id": "user_01",
+    "query": "mulyani",
+    "title": "Isu Mundur, Sri Mulyani Ikut Rapat dengan Prabowo di Istana",
+    "url": "https://www.cnnindonesia.com/nasional/20250831185417-32-1268545/isu-mundur-sri-mulyani-ikut-rapat-dengan-prabowo-di-istana",
+    "content": "Isu Mundur, Sri Mulyani Ikut Rapat dengan Prabowo di Istana <img src=\"https://akcdn.detik.net.id/visual/2025/08/31/sri-mulyani-1756641485273_169.jpeg?w=360&amp;q=90\" /> Sri Mulyani hadir di rapat kabinet Prabowo yang digelar di Istana, Minggu (31/8). Sebelumnya muncul isu Menkeu mundur usai penjarahan.",
+    "source": "CNN",
+    "click_time": "Monday, 01 September 2025 13:48",
+    "publishedAt": "2025-08-31 20:13",
+    "label": 0
+  },
+  {
+    "user_id": "user_01",
+    "query": "mulyani",
+    "title": "Kondisi Terbaru Rumah Sri Mulyani",
+    "url": "https://www.detik.com/jabar/foto/d-8088832/kondisi-terbaru-rumah-sri-mulyani",
+    "content": "Kondisi Terbaru Rumah Sri Mulyani",
+    "source": "Detik",
+    "click_time": "Monday, 01 September 2025 13:48",
+    "publishedAt": "2025-08-31 12:22",
+    "label": 0
+  },
+  {
+    "user_id": "user_01",
+    "query": "mulyani",
+    "title": "Sri Mulyani Berduka, Istri Mendiang Menkeu Mar’ie Muhammad Meninggal Dunia",
+    "url": "https://money.kompas.com/read/2025/08/24/194804326/sri-mulyani-berduka-istri-mendiang-menkeu-marie-muhammad-meninggal-dunia",
+    "content": "Sri Mulyani Berduka, Istri Mendiang Menkeu Mar’ie Muhammad Meninggal Dunia",
+    "source": "Kompas",
+    "click_time": "Monday, 01 September 2025 13:48",
+    "publishedAt": "2025-08-24 19:48",
+    "label": 0
   }
 ]
