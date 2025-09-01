@@ -682,10 +682,10 @@ def render_read_button(url: str, query: str, label: str = "Baca selengkapnya"):
 
 # ========================= APP =========================
 def main():
-    st.title("📰 Sistem Rekomendasi Berita")
+    st.title("📰 SISTEM REKOMENDASI BERITA")
     st.markdown(
-        "Aplikasi ini merekomendasikan berita dari Detik, CNN Indonesia, dan Kompas "
-        "berdasarkan riwayat topik. Waktu publikasi diambil langsung dari halaman artikel."
+        "Sistem ini merekomendasikan berita dari Detik, CNN Indonesia, dan Kompas "
+        "berdasarkan riwayat topik serta menyediakan fitur pencarian."
     )
 
     # Sidebar (hanya cache + model personalisasi)
