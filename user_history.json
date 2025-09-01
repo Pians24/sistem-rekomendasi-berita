@@ -1571,5 +1571,15 @@
     "click_time": "Monday, 01 September 2025 22:14",
     "publishedAt": "2025-09-01 18:14",
     "label": 1
+  },
+  {
+    "user_id": "user_01",
+    "query": "Eko Patrio",
+    "title": "Polisi Selidiki Dalang Dan Pelaku Penjarahan Rumah Eko Patrio",
+    "url": "https://news.detik.com/berita/d-8090545/polisi-selidiki-dalang-dan-pelaku-penjarahan-rumah-eko-patrio",
+    "source": "Detik",
+    "click_time": "Monday, 01 September 2025 22:42",
+    "publishedAt": "2025-09-01 14:15",
+    "label": 1
   }
 ]
