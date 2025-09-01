@@ -665,13 +665,13 @@ def render_read_button(url: str, query: str, label: str = "Baca selengkapnya"):
         components.html(
             f"""
             <script>
-              (function(){{
+              (function(){{ 
                 try {{
                   var u = {safe};
                   var a = document.createElement('a');
                   a.href = u; a.target = '_blank'; a.rel='noopener noreferrer'; a.style.display='none';
                   document.body.appendChild(a); a.click();
-                }} } catch(e) {{
+                }} catch(e) {{
                   try {{ window.open({safe}, '_blank'); }} catch(_e) {{}}
                 }}
               }})();
@@ -734,11 +734,7 @@ def main():
                         else:
                             for _, row in results_latest.iterrows():
                                 src = get_source_from_url(row["url"])
-                                # Format 4 baris:
-                                # [sumber] judul
-                                # link
-                                # waktu
-                                # skor
+                                # Format 4 baris: [sumber] judul -> link -> waktu -> skor
                                 st.markdown(f"**[{src}] {row['title']}**")
                                 st.write(row["url"])
                                 st.write(f"Waktu: {format_display_time(row.get('publishedAt',''))}")
@@ -852,7 +848,6 @@ def main():
                 render_read_button(row["url"], S.current_query)
                 st.markdown("---")
 
-            # info kecil di bawah daftar: berapa yang sudah tercatat
             clicked_cnt = len(S.clicked_by_query.get(S.current_query, set()))
             total_cnt = len(S.current_recommended_results)
             st.caption(f"Klik tercatat: {clicked_cnt} dari {total_cnt}. Data akan disimpan saat Anda mencari topik baru.")
