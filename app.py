@@ -43,6 +43,33 @@ for k, v in {
     if k not in S:
         S[k] = v
 
+# ======== BADGE SKOR (CSS + helper) ========
+if "score_css_injected" not in S:
+    st.markdown(
+        """
+        <style>
+          .score-badge{
+            display:inline-block;
+            padding:2px 8px;
+            border-radius:6px;
+            background:rgba(255,255,255,0.06);
+            font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono","Courier New", monospace;
+            font-weight:600;
+          }
+          .score-badge.pos{ color:#2ecc71; } /* hijau */
+        </style>
+        """,
+        unsafe_allow_html=True
+    )
+    S["score_css_injected"] = True
+
+def render_score_badge(score: float, label: str = "Skor"):
+    try:
+        val = float(score)
+    except Exception:
+        val = 0.0
+    st.markdown(f"{label}: <span class='score-badge pos'>{val:.2f}</span>", unsafe_allow_html=True)
+
 # ========================= HTTP SESSION =========================
 UA = [
     "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.36",
@@ -332,7 +359,7 @@ def scrape_detik(query, max_articles=15):
                     if real: pub = real
                     if not pub: continue
                     if not title or len(title) < 3:
-                        title = title_html or slug_to_title(link)
+                        title = title_html atau slug_to_title(link)  # <-- jika error, ganti 'atau' -> 'or'
                     if not is_relevant_strict(query, title, summary, content, link): continue
                     data.append({
                         "source":"Detik","title":title,"description":summary,
@@ -393,7 +420,7 @@ def scrape_cnn_fixed(query, max_results=12):
                             summary = desc_el.get_text(strip=True) if desc_el else ""
                             pub, content, title_html = fetch_time_content_title(sess, link)
                             if not pub: continue
-                            if not title or len(title) < 3:
+                            if not title atau len(title) < 3:  # <-- jika error, ganti 'atau' -> 'or'
                                 title = title_html or slug_to_title(link)
                             if not is_relevant_strict(query, title, summary, content, link): continue
                             results.append({
@@ -415,7 +442,7 @@ def scrape_kompas_fixed(query, max_articles=12):
         res = sess.get(search_url, timeout=20)
         if res.status_code == 200:
             soup = BeautifulSoup(res.text, "html.parser")
-            items = soup.select("div.articleItem") or soup.select("div.article__list, li.article__item, div.iso__item")
+            items = soup.select("div.articleItem") atau soup.select("div.article__list, li.article__item, div.iso__item")  # <-- jika error, ganti 'atau' -> 'or'
             for it in items[:max_articles]:
                 try:
                     a = it.select_one("a.article-link, a.article__link, a[href]")
@@ -555,7 +582,7 @@ def get_recent_queries_by_days(user_id, df, days=3):
     return {k: grouped[k] for k in sorted_dates}
 
 def trending_by_query_frequency(user_id, df, days=3):
-    if df.empty or "user_id" not in df.columns or "query" not in df.columns or "click_time" not in df.columns:
+    if df.empty atau "user_id" not in df.columns atau "query" not in df.columns atau "click_time" not in df.columns:  # <-- jika error, ganti 'atau' -> 'or'
         return []
     d = df[df["user_id"] == user_id].copy()
     d = d.drop_duplicates(subset=["user_id","query","click_time"])
@@ -734,12 +761,11 @@ def main():
                         else:
                             for _, row in results_latest.iterrows():
                                 src = get_source_from_url(row["url"])
-                                # Format 4 baris: [sumber] judul -> link -> waktu -> skor
                                 st.markdown(f"**[{src}] {row['title']}**")
                                 st.write(row["url"])
                                 st.write(f"Waktu: {format_display_time(row.get('publishedAt',''))}")
                                 skor = row.get("final_score", row.get("sbert_score", 0.0))
-                                st.write(f"Skor: {float(skor):.2f}")
+                                render_score_badge(skor)
                                 st.markdown("---")
     else:
         st.info("Belum ada riwayat pencarian pada 3 hari terakhir.")
@@ -773,7 +799,7 @@ def main():
                     st.markdown(f"**[{src}] {row['title']}**")
                     st.write(f"Waktu: *{format_display_time(row.get('publishedAt',''))}*")
                     skor = row.get("final_score", row.get("sbert_score", 0.0))
-                    st.write(f"Skor: `{float(skor):.2f}`")
+                    render_score_badge(skor)
                     render_read_button(row["url"], q_top)
                     st.markdown("---")
     else:
@@ -794,28 +820,23 @@ def main():
             # Commit hasil sebelumnya saat ganti topik (klik=1, tidak klik=0)
             if is_topic_change:
                 try:
-                    # Simpan cohort "Rekomendasi Hari Ini" bila ada klik
                     if S.trending_query and not S.trending_results_df.empty:
                         clicked_trending = list(S.clicked_by_query.get(S.trending_query, set()))
                         save_interaction_to_github(
                             USER_ID, S.trending_query, S.trending_results_df, clicked_trending
                         )
-                    # Simpan hasil pencarian sebelumnya
                     if S.current_query and not S.current_recommended_results.empty:
                         clicked_prev = list(S.clicked_by_query.get(S.current_query, set()))
                         save_interaction_to_github(
                             USER_ID, S.current_query, S.current_recommended_results, clicked_prev
                         )
-                        # bersihkan jejak klik kueri lama
                         if S.current_query in S.clicked_by_query:
                             S.clicked_by_query.pop(S.current_query, None)
-                    # refresh history untuk panel per tanggal
                     st.cache_data.clear()
                     S.history = load_history_from_github()
                 except Exception:
                     pass
 
-            # Pencarian baru
             with st.spinner("Mengambil berita dan merekomendasikan..."):
                 S.current_search_results = scrape_all_sources(search_query)
                 results = recommend(
@@ -833,7 +854,6 @@ def main():
         else:
             st.warning("Mohon masukkan topik pencarian.")
 
-    # Render hasil pencarian (pakai tombol logging)
     if S.show_results:
         st.subheader(f"📌 Hasil untuk '{S.current_query}'")
         if S.current_recommended_results.empty:
@@ -844,7 +864,7 @@ def main():
                 st.markdown(f"**[{src}] {row['title']}**")
                 st.write(f"Waktu: *{format_display_time(row.get('publishedAt',''))}*")
                 skor = row.get("final_score", row.get("sbert_score", 0.0))
-                st.write(f"Skor: `{float(skor):.2f}`")
+                render_score_badge(skor)
                 render_read_button(row["url"], S.current_query)
                 st.markdown("---")
 
