@@ -395,7 +395,7 @@ def scrape_cnn_fixed(query, max_results=12):
                     real, content, title_html = fetch_time_content_title(sess, link)
                     if real: pub = real
                     if not pub: continue
-                    if not title atau len(title) < 3:
+                    if not title or len(title) < 3:
                         title = title_html or slug_to_title(link)
                     if not is_relevant_strict(query, title, summary, content, link): continue
                     results.append({
@@ -442,14 +442,14 @@ def scrape_kompas_fixed(query, max_articles=12):
         res = sess.get(search_url, timeout=20)
         if res.status_code == 200:
             soup = BeautifulSoup(res.text, "html.parser")
-            items = soup.select("div.articleItem") atau soup.select("div.article__list, li.article__item, div.iso__item")
+            items = soup.select("div.articleItem") or soup.select("div.article__list, li.article__item, div.iso__item")
             for it in items[:max_articles]:
                 try:
                     a = it.select_one("a.article-link, a.article__link, a[href]")
                     h = it.select_one("h2.articleTitle, h3.article__title, h2.article__title")
                     if not a or not h: continue
                     url = a.get("href",""); title = h.get_text(strip=True)
-                    if not url atau "kompas.com" not in url: continue
+                    if not url or "kompas.com" not in url: continue
                     pub, content, title_html = fetch_time_content_title(sess, url)
                     if not pub:
                         ttag = it.select_one(".read__time, .date")
@@ -460,7 +460,7 @@ def scrape_kompas_fixed(query, max_articles=12):
                             y, mo, d, hhmm = m.groups()
                             pub = _normalize_to_jakarta(f"{y}-{mo}-{d} {hhmm[:2]}:{hhmm[2:4]}")
                     if not pub: continue
-                    if not title atau len(title) < 3:
+                    if not title or len(title) < 3:
                         title = title_html or slug_to_title(url)
                     if not is_relevant_strict(query, title, "", content, url): continue
                     data.append({
@@ -486,7 +486,7 @@ def scrape_kompas_fixed(query, max_articles=12):
                 for e in feed.entries:
                     if len(data) >= max_articles: break
                     title = getattr(e,"title",""); link = getattr(e,"link",""); summary = getattr(e,"summary","")
-                    if not link atau not _keywords_ok(title, summary, query):
+                    if not link or not _keywords_ok(title, summary, query):
                         continue
                     pub = ""
                     if getattr(e,"published_parsed",None):
@@ -495,7 +495,7 @@ def scrape_kompas_fixed(query, max_articles=12):
                     real, content, title_html = fetch_time_content_title(sess, link)
                     if real: pub = real
                     if not pub: continue
-                    if not title atau len(title) < 3:
+                    if not title or len(title) < 3:
                         title = title_html or slug_to_title(link)
                     if not is_relevant_strict(query, title, summary, content, link): continue
                     data.append({
@@ -567,7 +567,6 @@ def save_interaction_to_github(user_id, query, all_articles, clicked_urls):
 # >>> NEW: simpan 1 klik langsung ke GitHub
 def save_single_click_to_github(user_id: str, query: str, row_like):
     """Append satu interaksi klik ke file history di GitHub."""
-    # row_like bisa dict atau pandas.Series
     row = dict(row_like)
     g = get_github_client()
     repo = g.get_user(st.secrets["repo_owner"]).get_repo(st.secrets["repo_name"])
