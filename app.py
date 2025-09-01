@@ -32,8 +32,8 @@ for k, v in {
     "show_results": False,
     "current_query": "",
     "current_recommended_results": pd.DataFrame(),
-    "clicked_by_query": {},  # klik per kueri -> {query: set(url, ...)}
-    "trending_results_df": pd.DataFrame(),  # cache cohort "Rekomendasi Hari Ini"
+    "clicked_by_query": {},               # klik per kueri -> {query: set(url, ...)}
+    "trending_results_df": pd.DataFrame(),
     "trending_query": "",
     "topic_change_counter": 0,
     "per_tanggal_done_counter": 0,
@@ -41,44 +41,22 @@ for k, v in {
     if k not in S:
         S[k] = v
 
-# ======== SKOR CHIP (CSS + helper sederhana) ========
-if "score_css_injected" not in S:
-    st.markdown(
-        """
-        <style>
-          .score-pill{
-            display:inline-block;
-            padding:2px 8px;
-            border-radius:6px;
-            background:rgba(255,255,255,0.06);
-            border:1px solid rgba(255,255,255,0.10);
-          }
-          .score-pill .v{
-            font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono","Courier New", monospace;
-            font-weight:700;
-            letter-spacing:.2px;
-            color:#2ecc71; /* hijau */
-          }
-          @media (prefers-color-scheme: light){
-            .score-pill{ background:rgba(0,0,0,0.05); border-color:rgba(0,0,0,0.10); }
-            .score-pill .v{ color:#1e8e3e; }
-          }
-        </style>
-        """,
-        unsafe_allow_html=True
-    )
-    S["score_css_injected"] = True
-
+# ======== SKOR CHIP (SANGAT SEDERHANA, INLINE STYLE) ========
 def render_score_badge(score: float, label: str = "Skor"):
-    """Tampilkan skor seperti contoh: 'Skor: [ 0.51 ]' kecil, hijau, dalam chip."""
+    """Contoh: Skor: [ 0.51 ] kecil, hijau, kapsul gelap."""
     try:
         val = float(score)
     except Exception:
         val = 0.0
-    st.markdown(
-        f"{label}: <span class='score-pill'><span class='v'>{val:.2f}</span></span>",
-        unsafe_allow_html=True
+    html = (
+        f"{label}: "
+        f"<span style=\"display:inline-block;padding:2px 8px;border-radius:6px;"
+        f"background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.10);\">"
+        f"<span style=\"font-family:ui-monospace,SFMono-Regular,Menlo,Monaco,Consolas,"
+        f"'Liberation Mono','Courier New',monospace;font-weight:700;letter-spacing:.2px;"
+        f"color:#2ecc71;\">{val:.2f}</span></span>"
     )
+    st.markdown(html, unsafe_allow_html=True)
 
 # ========================= HTTP SESSION =========================
 UA = [
@@ -470,7 +448,7 @@ def scrape_kompas_fixed(query, max_articles=12):
                             y, mo, d, hhmm = m.groups()
                             pub = _normalize_to_jakarta(f"{y}-{mo}-{d} {hhmm[:2]}:{hhmm[2:4]}")
                     if not pub: continue
-                    if not title or len(title) < 3:
+                    if not title or len(title) < 3:  # <- FIX: pakai 'or' bukan 'atau'
                         title = title_html or slug_to_title(url)
                     if not is_relevant_strict(query, title, "", content, url): continue
                     data.append({
@@ -574,7 +552,7 @@ def save_interaction_to_github(user_id, query, all_articles, clicked_urls):
     updated = json.dumps(history_list, indent=2, ensure_ascii=False)
     repo.update_file(st.secrets["file_path"], f"Update history for {query}", updated, contents.sha)
 
-# >>> NEW: simpan 1 klik langsung ke GitHub
+# >>> Simpan 1 klik langsung ke GitHub
 def save_single_click_to_github(user_id: str, query: str, row_like):
     """Append satu interaksi klik ke file history di GitHub."""
     row = dict(row_like)
@@ -639,7 +617,7 @@ def trending_by_query_frequency(user_id, df, days=3):
         days=("ts", lambda s: s.dt.date.nunique()),
         last_ts=("ts","max")
     ).reset_index()
-    agg = agg.sort_values(by=["days","total","last_ts"], ascending=[False, False, False])
+    agg = d.sort_values(by=["days","total","last_ts"], ascending=[False, False, False])
     return list(agg[["query","total"]].itertuples(index=False, name=None))
 
 # ========================= TRAIN & RECOMMEND =========================
@@ -649,7 +627,7 @@ def build_training_data(user_id):
         user_data = [h for h in history_df.to_dict("records")
                      if h.get("user_id")==user_id and "label" in h and h.get("title") and h.get("content")]
         df = pd.DataFrame(user_data)
-        if df.empty or df["label"].nunique() < 2:
+        if df.empty or df["label"].nunique() < 2:   # <- FIX: 'or'
             return pd.DataFrame()
         train, seen = [], set()
         for _, row in df.iterrows():
