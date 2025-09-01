@@ -611,14 +611,17 @@ def trending_by_query_frequency(user_id, df, days=3):
     now = datetime.now()
     cutoff = now - timedelta(days=days)
     d = d[d["ts"] >= cutoff]
-    if d.empty: return []
+    if d.empty:
+        return []
+
     agg = d.groupby("query").agg(
-        total=("query","count"),
+        total=("query", "count"),
         days=("ts", lambda s: s.dt.date.nunique()),
-        last_ts=("ts","max")
+        last_ts=("ts", "max")
     ).reset_index()
-    agg = d.sort_values(by=["days","total","last_ts"], ascending=[False, False, False])
-    return list(agg[["query","total"]].itertuples(index=False, name=None))
+    agg = agg.sort_values(by=["days", "total", "last_ts"], ascending=[False, False, False])
+    return list(agg[["query", "total"]].itertuples(index=False, name=None))
+
 
 # ========================= TRAIN & RECOMMEND =========================
 def build_training_data(user_id):
