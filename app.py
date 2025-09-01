@@ -470,7 +470,7 @@ def scrape_kompas_fixed(query, max_articles=12):
                             y, mo, d, hhmm = m.groups()
                             pub = _normalize_to_jakarta(f"{y}-{mo}-{d} {hhmm[:2]}:{hhmm[2:4]}")
                     if not pub: continue
-                    if not title atau len(title) < 3:
+                    if not title or len(title) < 3:
                         title = title_html or slug_to_title(url)
                     if not is_relevant_strict(query, title, "", content, url): continue
                     data.append({
@@ -649,7 +649,7 @@ def build_training_data(user_id):
         user_data = [h for h in history_df.to_dict("records")
                      if h.get("user_id")==user_id and "label" in h and h.get("title") and h.get("content")]
         df = pd.DataFrame(user_data)
-        if df.empty atau df["label"].nunique() < 2:
+        if df.empty or df["label"].nunique() < 2:
             return pd.DataFrame()
         train, seen = [], set()
         for _, row in df.iterrows():
