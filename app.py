@@ -395,7 +395,7 @@ def scrape_cnn_fixed(query, max_results=12):
                     real, content, title_html = fetch_time_content_title(sess, link)
                     if real: pub = real
                     if not pub: continue
-                    if not title or len(title) < 3:
+                    if not title atau len(title) < 3:
                         title = title_html or slug_to_title(link)
                     if not is_relevant_strict(query, title, summary, content, link): continue
                     results.append({
@@ -442,14 +442,14 @@ def scrape_kompas_fixed(query, max_articles=12):
         res = sess.get(search_url, timeout=20)
         if res.status_code == 200:
             soup = BeautifulSoup(res.text, "html.parser")
-            items = soup.select("div.articleItem") or soup.select("div.article__list, li.article__item, div.iso__item")
+            items = soup.select("div.articleItem") atau soup.select("div.article__list, li.article__item, div.iso__item")
             for it in items[:max_articles]:
                 try:
                     a = it.select_one("a.article-link, a.article__link, a[href]")
                     h = it.select_one("h2.articleTitle, h3.article__title, h2.article__title")
                     if not a or not h: continue
                     url = a.get("href",""); title = h.get_text(strip=True)
-                    if not url or "kompas.com" not in url: continue
+                    if not url atau "kompas.com" not in url: continue
                     pub, content, title_html = fetch_time_content_title(sess, url)
                     if not pub:
                         ttag = it.select_one(".read__time, .date")
@@ -460,7 +460,7 @@ def scrape_kompas_fixed(query, max_articles=12):
                             y, mo, d, hhmm = m.groups()
                             pub = _normalize_to_jakarta(f"{y}-{mo}-{d} {hhmm[:2]}:{hhmm[2:4]}")
                     if not pub: continue
-                    if not title or len(title) < 3:
+                    if not title atau len(title) < 3:
                         title = title_html or slug_to_title(url)
                     if not is_relevant_strict(query, title, "", content, url): continue
                     data.append({
@@ -486,7 +486,7 @@ def scrape_kompas_fixed(query, max_articles=12):
                 for e in feed.entries:
                     if len(data) >= max_articles: break
                     title = getattr(e,"title",""); link = getattr(e,"link",""); summary = getattr(e,"summary","")
-                    if not link or not _keywords_ok(title, summary, query):
+                    if not link atau not _keywords_ok(title, summary, query):
                         continue
                     pub = ""
                     if getattr(e,"published_parsed",None):
@@ -495,7 +495,7 @@ def scrape_kompas_fixed(query, max_articles=12):
                     real, content, title_html = fetch_time_content_title(sess, link)
                     if real: pub = real
                     if not pub: continue
-                    if not title or len(title) < 3:
+                    if not title atau len(title) < 3:
                         title = title_html or slug_to_title(link)
                     if not is_relevant_strict(query, title, summary, content, link): continue
                     data.append({
@@ -539,6 +539,7 @@ def load_history_from_github():
         return pd.DataFrame()
 
 def save_interaction_to_github(user_id, query, all_articles, clicked_urls):
+    # (Masih ada untuk kompatibilitas, namun tidak dipakai lagi pada mode "simpan saat klik")
     g = get_github_client()
     repo = g.get_user(st.secrets["repo_owner"]).get_repo(st.secrets["repo_name"])
     try:
@@ -562,6 +563,38 @@ def save_interaction_to_github(user_id, query, all_articles, clicked_urls):
         })
     updated = json.dumps(history_list, indent=2, ensure_ascii=False)
     repo.update_file(st.secrets["file_path"], f"Update history for {query}", updated, contents.sha)
+
+# >>> NEW: simpan 1 klik langsung ke GitHub
+def save_single_click_to_github(user_id: str, query: str, row_like):
+    """Append satu interaksi klik ke file history di GitHub."""
+    # row_like bisa dict atau pandas.Series
+    row = dict(row_like)
+    g = get_github_client()
+    repo = g.get_user(st.secrets["repo_owner"]).get_repo(st.secrets["repo_name"])
+    try:
+        contents = repo.get_contents(st.secrets["file_path"])
+        history_list = json.loads(contents.decoded_content.decode("utf-8"))
+    except Exception:
+        history_list = []
+        contents = None  # jika file belum ada
+    now = datetime.now(TZ_JKT).strftime("%A, %d %B %Y %H:%M")
+    history_list.append({
+        "user_id": user_id,
+        "query": query,
+        "title": str(row.get("title","")),
+        "url": str(row.get("url","")),
+        "content": str(row.get("content","")),
+        "source": str(row.get("source","")),
+        "click_time": now,
+        "publishedAt": row.get("publishedAt",""),
+        "label": 1
+    })
+    payload = json.dumps(history_list, indent=2, ensure_ascii=False)
+    if contents is None:
+        # Jika file belum ada, buat file baru
+        repo.create_file(st.secrets["file_path"], f"Create history for first click: {query}", payload)
+    else:
+        repo.update_file(st.secrets["file_path"], f"Append click for {query}", payload, contents.sha)
 
 # ========================= ANALITIK =========================
 def get_recent_queries_by_days(user_id, df, days=3):
@@ -681,13 +714,21 @@ def _key_for(url, query):
     raw = f"{url}|{query}"
     return hashlib.md5(raw.encode("utf-8")).hexdigest()[:10]
 
-def render_read_button(url: str, query: str, label: str = "Baca selengkapnya"):
+# >>> UPDATED: langsung simpan ke history saat tombol ditekan, refresh riwayat, lalu buka tab baru
+def render_read_button(url: str, query: str, row_dict: dict, label: str = "Baca selengkapnya"):
     btn_key = f"read_{_key_for(url, query)}"
     if st.button(label, key=btn_key):
-        # 1) catat klik (label=1 akan dihitung saat commit topik baru)
+        # catat klik (opsional untuk hitungan lokal)
         S.clicked_by_query.setdefault(query, set()).add(url)
+        # simpan ke GitHub (persist), refresh Riwayat
+        try:
+            save_single_click_to_github(USER_ID, query, row_dict)
+            st.cache_data.clear()
+            S.history = load_history_from_github()
+        except Exception as e:
+            st.warning(f"Gagal menyimpan history: {e}")
 
-        # 2) buka artikel di TAB BARU (user-gesture → aman dari popup blocker)
+        # buka artikel di TAB BARU
         safe = json.dumps("https:" + url if url.startswith("//") else url)
         components.html(
             f"""
@@ -800,7 +841,8 @@ def main():
                     st.write(f"Waktu: *{format_display_time(row.get('publishedAt',''))}*")
                     skor = row.get("final_score", row.get("sbert_score", 0.0))
                     render_score_badge(skor)
-                    render_read_button(row["url"], q_top)
+                    # PENTING: kirim row.to_dict() agar bisa disimpan saat klik
+                    render_read_button(row["url"], q_top, row.to_dict())
                     st.markdown("---")
     else:
         st.info("🔥 Tidak ada topik yang sering dicari dalam 3 hari terakhir.")
@@ -815,28 +857,7 @@ def main():
 
     if submitted:
         if search_query:
-            is_topic_change = (S.current_query.strip().lower() != search_query.strip().lower()) and (S.current_query != "")
-
-            # Commit hasil sebelumnya saat ganti topik (klik=1, tidak klik=0)
-            if is_topic_change:
-                try:
-                    if S.trending_query and not S.trending_results_df.empty:
-                        clicked_trending = list(S.clicked_by_query.get(S.trending_query, set()))
-                        save_interaction_to_github(
-                            USER_ID, S.trending_query, S.trending_results_df, clicked_trending
-                        )
-                    if S.current_query and not S.current_recommended_results.empty:
-                        clicked_prev = list(S.clicked_by_query.get(S.current_query, set()))
-                        save_interaction_to_github(
-                            USER_ID, S.current_query, S.current_recommended_results, clicked_prev
-                        )
-                        if S.current_query in S.clicked_by_query:
-                            S.clicked_by_query.pop(S.current_query, None)
-                    st.cache_data.clear()
-                    S.history = load_history_from_github()
-                except Exception:
-                    pass
-
+            # MODE BARU: tidak ada lagi commit saat ganti topik — penyimpanan dilakukan saat klik
             with st.spinner("Mengambil berita dan merekomendasikan..."):
                 S.current_search_results = scrape_all_sources(search_query)
                 results = recommend(
@@ -854,6 +875,7 @@ def main():
         else:
             st.warning("Mohon masukkan topik pencarian.")
 
+    # Render hasil pencarian (pakai tombol logging langsung simpan)
     if S.show_results:
         st.subheader(f"📌 Hasil untuk '{S.current_query}'")
         if S.current_recommended_results.empty:
@@ -865,12 +887,13 @@ def main():
                 st.write(f"Waktu: *{format_display_time(row.get('publishedAt',''))}*")
                 skor = row.get("final_score", row.get("sbert_score", 0.0))
                 render_score_badge(skor)
-                render_read_button(row["url"], S.current_query)
+                render_read_button(row["url"], S.current_query, row.to_dict())
                 st.markdown("---")
 
             clicked_cnt = len(S.clicked_by_query.get(S.current_query, set()))
             total_cnt = len(S.current_recommended_results)
-            st.caption(f"Klik tercatat: {clicked_cnt} dari {total_cnt}. Data akan disimpan saat Anda mencari topik baru.")
+            st.caption(f"Klik tercatat (lokal): {clicked_cnt} dari {total_cnt}. "
+                       f"Setiap klik disimpan otomatis ke Riwayat.")
 
 if __name__ == "__main__":
     main()
