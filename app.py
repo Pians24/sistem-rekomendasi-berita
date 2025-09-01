@@ -709,7 +709,42 @@ def main():
     else:
         st.sidebar.info("Model belum bisa dilatih karena riwayat tidak mencukupi.")
 
-    # ---------- REKOMENDASI HARI INI (opsional, tetap ada) ----------
+    # ========== (1) RIWAYAT PENCARIAN BERITA ==========
+    st.header("📚 RIWAYAT PENCARIAN BERITA")
+    grouped_queries = get_recent_queries_by_days(USER_ID, S.history, days=3)
+    if grouped_queries:
+        for date, queries in grouped_queries.items():
+            st.subheader(f"Tanggal {date}")
+            for q in sorted(set(queries)):
+                with st.expander(f"- {q}", expanded=True):
+                    with st.spinner("Mengambil berita terbaru dari 3 sumber..."):
+                        df_latest = scrape_all_sources(q)
+                    if df_latest.empty:
+                        st.info("❗ Tidak ditemukan berita terbaru untuk topik ini.")
+                    else:
+                        results_latest = recommend(
+                            df_latest, q, clf,
+                            n_per_source=3,
+                            min_score=DEFAULT_MIN_SCORE,
+                            use_lr_boost=USE_LR_BOOST, alpha=ALPHA,
+                            per_source_group=PER_SOURCE_GROUP,
+                        )
+                        if results_latest.empty:
+                            st.info("❗ Tidak ada hasil relevan dari portal untuk topik ini.")
+                        else:
+                            for _, row in results_latest.iterrows():
+                                src = get_source_from_url(row["url"])
+                                st.markdown(f"**[{src}]** [{row['title']}]({row['url']})")
+                                st.write(f"Waktu Publikasi: *{format_display_time(row.get('publishedAt',''))}*")
+                                skor = row.get("final_score", row.get("sbert_score", 0.0))
+                                st.write(f"Skor: `{float(skor):.2f}`")
+                                st.markdown("---")
+    else:
+        st.info("Belum ada riwayat pencarian pada 3 hari terakhir.")
+
+    st.markdown("---")
+
+    # ========== (2) REKOMENDASI BERITA HARI INI ==========
     st.header("🔥 REKOMENDASI BERITA HARI INI")
     trends = trending_by_query_frequency(USER_ID, S.history, days=3)
     if trends:
@@ -744,7 +779,7 @@ def main():
 
     st.markdown("---")
 
-    # ---------- PENCARIAN BEBAS (fokus utama) ----------
+    # ========== (3) PENCARIAN BERITA ==========
     st.header("🔍 PENCARIAN BERITA")
     with st.form(key="search_form", clear_on_submit=False):
         search_query = st.text_input("Ketik topik berita yang ingin Anda cari:", value=S.current_query)
@@ -786,7 +821,7 @@ def main():
                     search_query, clf,
                     n_per_source=3,
                     min_score=DEFAULT_MIN_SCORE,
-                    use_lr_boost=USE_LR_BOOST, alpha=ALPHA,
+                    use_lr_boOST=USE_LR_BOOST, alpha=ALPHA,
                     per_source_group=PER_SOURCE_GROUP,
                 )
                 S.current_recommended_results = results
@@ -815,41 +850,6 @@ def main():
             clicked_cnt = len(S.clicked_by_query.get(S.current_query, set()))
             total_cnt = len(S.current_recommended_results)
             st.caption(f"Klik tercatat: {clicked_cnt} dari {total_cnt}. Data akan disimpan saat Anda mencari topik baru.")
-
-    st.markdown("---")
-
-    # ---------- PENCARIAN BERITA PER TANGGAL (read-only link) ----------
-    st.header("📚 RIWAYAT PENCARIAN BERITA")
-    grouped_queries = get_recent_queries_by_days(USER_ID, S.history, days=3)
-    if grouped_queries:
-        for date, queries in grouped_queries.items():
-            st.subheader(f"Tanggal {date}")
-            for q in sorted(set(queries)):
-                with st.expander(f"- {q}", expanded=True):
-                    with st.spinner("Mengambil berita terbaru dari 3 sumber..."):
-                        df_latest = scrape_all_sources(q)
-                    if df_latest.empty:
-                        st.info("❗ Tidak ditemukan berita terbaru untuk topik ini.")
-                    else:
-                        results_latest = recommend(
-                            df_latest, q, clf,
-                            n_per_source=3,
-                            min_score=DEFAULT_MIN_SCORE,
-                            use_lr_boost=USE_LR_BOOST, alpha=ALPHA,
-                            per_source_group=PER_SOURCE_GROUP,
-                        )
-                        if results_latest.empty:
-                            st.info("❗ Tidak ada hasil relevan dari portal untuk topik ini.")
-                        else:
-                            for _, row in results_latest.iterrows():
-                                src = get_source_from_url(row["url"])
-                                st.markdown(f"**[{src}]** [{row['title']}]({row['url']})")
-                                st.write(f"Waktu Publikasi: *{format_display_time(row.get('publishedAt',''))}*")
-                                skor = row.get("final_score", row.get("sbert_score", 0.0))
-                                st.write(f"Skor: `{float(skor):.2f}`")
-                                st.markdown("---")
-    else:
-        st.info("Belum ada riwayat pencarian pada 3 hari terakhir.")
 
 if __name__ == "__main__":
     main()
