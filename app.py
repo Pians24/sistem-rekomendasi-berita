@@ -12,6 +12,7 @@ from sklearn.metrics import accuracy_score, precision_score, recall_score, f1_sc
 from sklearn.metrics.pairwise import cosine_similarity
 from sentence_transformers import SentenceTransformer
 from github import Github
+from github.GithubException import GithubException
 import streamlit.components.v1 as components
 
 # ========================= KONFIG & STATE =========================
@@ -448,7 +449,7 @@ def scrape_kompas_fixed(query, max_articles=12):
                             y, mo, d, hhmm = m.groups()
                             pub = _normalize_to_jakarta(f"{y}-{mo}-{d} {hhmm[:2]}:{hhmm[2:4]}")
                     if not pub: continue
-                    if not title or len(title) < 3:  # <- FIX: pakai 'or' bukan 'atau'
+                    if not title or len(title) < 3:
                         title = title_html or slug_to_title(url)
                     if not is_relevant_strict(query, title, "", content, url): continue
                     data.append({
@@ -552,35 +553,81 @@ def save_interaction_to_github(user_id, query, all_articles, clicked_urls):
     updated = json.dumps(history_list, indent=2, ensure_ascii=False)
     repo.update_file(st.secrets["file_path"], f"Update history for {query}", updated, contents.sha)
 
-# >>> Simpan 1 klik langsung ke GitHub
+# >>> Simpan 1 klik langsung ke GitHub (aman + retry konflik + tanpa content)
 def save_single_click_to_github(user_id: str, query: str, row_like):
     """Append satu interaksi klik ke file history di GitHub."""
     row = dict(row_like)
-    g = get_github_client()
-    repo = g.get_user(st.secrets["repo_owner"]).get_repo(st.secrets["repo_name"])
-    try:
-        contents = repo.get_contents(st.secrets["file_path"])
-        history_list = json.loads(contents.decoded_content.decode("utf-8"))
-    except Exception:
-        history_list = []
-        contents = None  # jika file belum ada
     now = datetime.now(TZ_JKT).strftime("%A, %d %B %Y %H:%M")
-    history_list.append({
+    entry = {
         "user_id": user_id,
         "query": query,
         "title": str(row.get("title","")),
         "url": str(row.get("url","")),
-        "content": str(row.get("content","")),
         "source": str(row.get("source","")),
         "click_time": now,
         "publishedAt": row.get("publishedAt",""),
         "label": 1
-    })
-    payload = json.dumps(history_list, indent=2, ensure_ascii=False)
-    if contents is None:
-        repo.create_file(st.secrets["file_path"], f"Create history for first click: {query}", payload)
-    else:
-        repo.update_file(st.secrets["file_path"], f"Append click for {query}", payload, contents.sha)
+    }
+    g = get_github_client()
+    repo = g.get_user(st.secrets["repo_owner"]).get_repo(st.secrets["repo_name"])
+    path = st.secrets["file_path"]
+
+    # load + append
+    try:
+        contents = repo.get_contents(path)
+        history = json.loads(contents.decoded_content.decode("utf-8"))
+    except Exception:
+        contents = None
+        history = []
+
+    history.append(entry)
+    payload = json.dumps(history, indent=2, ensure_ascii=False)
+
+    # write with conflict retry
+    try:
+        if contents is None:
+            repo.create_file(path, f"Create history for first click: {query}", payload)
+        else:
+            repo.update_file(path, f"Append click for {query}", payload, contents.sha)
+    except GithubException as ge:
+        if ge.status == 409:  # refetch sha, try once
+            contents = repo.get_contents(path)
+            repo.update_file(path, f"Append click (retry) for {query}", payload, contents.sha)
+        else:
+            raise
+
+# >>> Update Riwayat lokal biar langsung terlihat tanpa reload berat
+def append_click_local(user_id: str, query: str, row_like):
+    row = dict(row_like)
+    now = datetime.now(TZ_JKT).strftime("%A, %d %B %Y %H:%M")
+    new_row = {
+        "user_id": user_id,
+        "query": query,
+        "title": str(row.get("title","")),
+        "url": str(row.get("url","")),
+        "source": str(row.get("source","")),
+        "publishedAt": row.get("publishedAt",""),
+        "click_time": now,
+        "label": 1,
+    }
+    try:
+        if S.history.empty:
+            S.history = pd.DataFrame([new_row])
+        else:
+            S.history = pd.concat([S.history, pd.DataFrame([new_row])], ignore_index=True)
+    except Exception:
+        pass
+
+# >>> Sanitasi URL sebelum dibuka (hanya http/https, handle //)
+def safe_href(u: str) -> str | None:
+    if not u:
+        return None
+    if u.startswith("//"):
+        u = "https:" + u
+    pu = urllib.parse.urlparse(u)
+    if pu.scheme not in ("http", "https"):
+        return None
+    return u
 
 # ========================= ANALITIK =========================
 def get_recent_queries_by_days(user_id, df, days=3):
@@ -627,14 +674,17 @@ def trending_by_query_frequency(user_id, df, days=3):
 def build_training_data(user_id):
     try:
         history_df = load_history_from_github()
-        user_data = [h for h in history_df.to_dict("records")
-                     if h.get("user_id")==user_id and "label" in h and h.get("title") and h.get("content")]
+        # title wajib, content opsional (biar klik baru tetap kepakai)
+        user_data = [
+            h for h in history_df.to_dict("records")
+            if h.get("user_id") == user_id and "label" in h and h.get("title")
+        ]
         df = pd.DataFrame(user_data)
-        if df.empty or df["label"].nunique() < 2:   # <- FIX: 'or'
+        if df.empty or df["label"].nunique() < 2:
             return pd.DataFrame()
         train, seen = [], set()
         for _, row in df.iterrows():
-            text = preprocess_text(str(row.get("title",""))+" "+str(row.get("content","")))
+            text = preprocess_text(str(row.get("title","")) + " " + str(row.get("content","")))
             label = int(row.get("label",0))
             if text and text not in seen:
                 train.append({"text":text, "label":label}); seen.add(text)
@@ -704,18 +754,19 @@ def _key_for(url, query):
     return hashlib.md5(raw.encode("utf-8")).hexdigest()[:10]
 
 def render_read_button(url: str, query: str, row_dict: dict, label: str = "Baca selengkapnya"):
-    """Langsung simpan ke history di GitHub + refresh riwayat + buka tab baru."""
+    """
+    UX halus:
+    1) Buka tab baru dulu (user-gesture) → cepat terasa.
+    2) Tandai lokal + simpan ke GitHub (tanpa clear cache global).
+    """
     btn_key = f"read_{_key_for(url, query)}"
     if st.button(label, key=btn_key):
-        S.clicked_by_query.setdefault(query, set()).add(url)
-        try:
-            save_single_click_to_github(USER_ID, query, row_dict)
-            st.cache_data.clear()
-            S.history = load_history_from_github()
-        except Exception as e:
-            st.warning(f"Gagal menyimpan history: {e}")
-        # Buka tab baru
-        safe = json.dumps("https:" + url if url.startswith("//") else url)
+        # 1) buka tab dulu
+        href = safe_href(url)
+        if href is None:
+            st.warning("Tautan tidak valid atau skemanya tidak diizinkan.")
+            return
+        safe = json.dumps(href)
         components.html(
             f"""
             <script>
@@ -733,6 +784,14 @@ def render_read_button(url: str, query: str, row_dict: dict, label: str = "Baca 
             """,
             height=0,
         )
+
+        # 2) catat lokal + simpan ke GitHub (tanpa st.cache_data.clear())
+        S.clicked_by_query.setdefault(query, set()).add(url)
+        append_click_local(USER_ID, query, row_dict)
+        try:
+            save_single_click_to_github(USER_ID, query, row_dict)
+        except Exception as e:
+            st.warning(f"Gagal menyimpan history: {e}")
 
 # ========================= APP =========================
 def main():
