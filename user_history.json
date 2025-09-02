@@ -1641,5 +1641,15 @@
     "click_time": "Tuesday, 02 September 2025 22:12",
     "publishedAt": "2025-09-02 21:36",
     "label": 1
+  },
+  {
+    "user_id": "user_01",
+    "query": "demo DPR",
+    "title": "Video Aparat Tni Polri Masih Berjaga Di Gedung Dpr Pagi Ini",
+    "url": "https://20.detik.com/detikupdate/20250902-250902026/video-aparat-tni-polri-masih-berjaga-di-gedung-dpr-pagi-ini",
+    "source": "Detik",
+    "click_time": "Tuesday, 02 September 2025 22:18",
+    "publishedAt": "2025-09-02 10:19",
+    "label": 1
   }
 ]
