@@ -1591,5 +1591,15 @@
     "click_time": "Monday, 01 September 2025 23:05",
     "publishedAt": "2025-09-01 11:55",
     "label": 1
+  },
+  {
+    "user_id": "user_01",
+    "query": "demo DPR",
+    "title": "Dasco, Raffi Ahmad, Kapolri Makan Malam Bareng Aparat Jaga Demo di DPR",
+    "url": "https://www.cnnindonesia.com/nasional/20250902173449-20-1269357/dasco-raffi-ahmad-kapolri-makan-malam-bareng-aparat-jaga-demo-di-dpr",
+    "source": "CNN",
+    "click_time": "Tuesday, 02 September 2025 20:33",
+    "publishedAt": "2025-09-02 17:43",
+    "label": 1
   }
 ]
