@@ -1701,5 +1701,15 @@
     "click_time": "Thursday, 04 September 2025 22:02",
     "publishedAt": "2025-09-04 15:05",
     "label": 1
+  },
+  {
+    "user_id": "user_01",
+    "query": "Demo DPR",
+    "title": "Demo Bakar Ban di DPRD Seram Bagian Timur, Tiga Mahasiswa Terbakar",
+    "url": "https://www.cnnindonesia.com/nasional/20250904193145-20-1270294/demo-bakar-ban-di-dprd-seram-bagian-timur-tiga-mahasiswa-terbakar",
+    "source": "CNN",
+    "click_time": "Thursday, 04 September 2025 23:25",
+    "publishedAt": "2025-09-04 19:53",
+    "label": 1
   }
 ]
