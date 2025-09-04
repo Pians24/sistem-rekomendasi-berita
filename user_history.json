@@ -1711,5 +1711,15 @@
     "click_time": "Thursday, 04 September 2025 23:25",
     "publishedAt": "2025-09-04 19:53",
     "label": 1
+  },
+  {
+    "user_id": "user_01",
+    "query": "Demo DPR",
+    "title": "Pemerintah Beri Santunan Rp5-Rp15 Juta ke Korban Demo Agustus",
+    "url": "https://www.cnnindonesia.com/nasional/20250904175324-20-1270253/pemerintah-beri-santunan-rp5-rp15-juta-ke-korban-demo-agustus",
+    "source": "CNN",
+    "click_time": "Thursday, 04 September 2025 23:31",
+    "publishedAt": "2025-09-04 18:32",
+    "label": 1
   }
 ]
