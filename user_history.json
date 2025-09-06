@@ -1751,5 +1751,15 @@
     "click_time": "Saturday, 06 September 2025 19:55",
     "publishedAt": "2025-09-05 15:01",
     "label": 1
+  },
+  {
+    "user_id": "user_01",
+    "query": "Demo DPR",
+    "title": "Saat Demo Tapi Piknik 17 8 Di Depan Dpr",
+    "url": "https://news.detik.com/berita/d-8098683/saat-demo-tapi-piknik-17-8-di-depan-dpr",
+    "source": "Detik",
+    "click_time": "Saturday, 06 September 2025 20:00",
+    "publishedAt": "2025-09-06 11:37",
+    "label": 1
   }
 ]
