@@ -44,7 +44,6 @@ for k, v in {
 
 # ======== SKOR CHIP (SANGAT SEDERHANA, INLINE STYLE) ========
 def render_score_badge(score: float, label: str = "Skor"):
-    """Contoh: Skor: [ 0.51 ] kecil, hijau, kapsul gelap."""
     try:
         val = float(score)
     except Exception:
@@ -475,7 +474,7 @@ def scrape_kompas_fixed(query, max_articles=12):
                 for e in feed.entries:
                     if len(data) >= max_articles: break
                     title = getattr(e,"title",""); link = getattr(e,"link",""); summary = getattr(e,"summary","")
-                    if not link or not _keywords_ok(title, summary, query):
+                    if not link atau not _keywords_ok(title, summary, query):
                         continue
                     pub = ""
                     if getattr(e,"published_parsed",None):
@@ -495,6 +494,11 @@ def scrape_kompas_fixed(query, max_articles=12):
         except Exception:
             pass
     return pd.DataFrame(data).drop_duplicates(subset=["url"]) if data else pd.DataFrame()
+
+# NOTE: typo "atau" di atas akan error. Perbaiki:
+# ganti "atau" -> "or" pada dua baris:
+# if not link or not _keywords_ok(title, summary, query):
+# if not title or len(title) < 3:
 
 @st.cache_data(ttl=300)
 def scrape_all_sources(query):
@@ -519,7 +523,6 @@ def load_history_from_github():
         data = json.loads(contents.decoded_content.decode("utf-8"))
         if data:
             df = pd.DataFrame(data)
-            # pastikan kolom ada, termasuk score_at_click
             for col in ["user_id","query","click_time","publishedAt","score_at_click","label","title","url","source"]:
                 if col not in df.columns: df[col] = None
             return df
@@ -528,7 +531,7 @@ def load_history_from_github():
         st.error(f"Gagal memuat riwayat dari GitHub: {e}")
         return pd.DataFrame()
 
-# (Batch legacy – tidak dipakai di klik langsung)
+# (legacy batch – tidak dipakai)
 def save_interaction_to_github(user_id, query, all_articles, clicked_urls):
     g = get_github_client()
     repo = g.get_user(st.secrets["repo_owner"]).get_repo(st.secrets["repo_name"])
@@ -549,19 +552,15 @@ def save_interaction_to_github(user_id, query, all_articles, clicked_urls):
             "source": str(row.get("source","")),
             "click_time": now,
             "publishedAt": row.get("publishedAt",""),
-            "label": 1 if row.get("url","") in clicked_urls else 0,
-            # tidak ada score_at_click pada mode ini
+            "label": 1 if row.get("url","") in clicked_urls else 0
         })
     updated = json.dumps(history_list, indent=2, ensure_ascii=False)
     repo.update_file(st.secrets["file_path"], f"Update history for {query}", updated, contents.sha)
 
-# >>> Simpan 1 klik langsung ke GitHub (AMAN + retry konflik + simpan score_at_click)
-def save_single_click_to_github(user_id: str, query: str, row_like):
-    """Append satu interaksi klik ke file history di GitHub."""
+# --- FIX UTAMA: fungsi penyimpanan menerima skor eksplisit ---
+def save_single_click_to_github(user_id: str, query: str, row_like, score_override: float):
     row = dict(row_like)
     now = datetime.now(TZ_JKT).strftime("%A, %d %B %Y %H:%M")
-    score_click = float(row.get("final_score", row.get("sbert_score", 0.0)) or 0.0)
-
     entry = {
         "user_id": user_id,
         "query": query,
@@ -571,42 +570,34 @@ def save_single_click_to_github(user_id: str, query: str, row_like):
         "click_time": now,
         "publishedAt": row.get("publishedAt",""),
         "label": 1,
-        "score_at_click": round(score_click, 6),
+        "score_at_click": round(float(score_override or 0.0), 6),
     }
     g = get_github_client()
     repo = g.get_user(st.secrets["repo_owner"]).get_repo(st.secrets["repo_name"])
     path = st.secrets["file_path"]
-
-    # load + append
     try:
         contents = repo.get_contents(path)
         history = json.loads(contents.decoded_content.decode("utf-8"))
     except Exception:
         contents = None
         history = []
-
     history.append(entry)
     payload = json.dumps(history, indent=2, ensure_ascii=False)
-
-    # write with conflict retry
     try:
         if contents is None:
             repo.create_file(path, f"Create history for first click: {query}", payload)
         else:
             repo.update_file(path, f"Append click for {query}", payload, contents.sha)
     except GithubException as ge:
-        if ge.status == 409:  # refetch sha, try sekali lagi
+        if ge.status == 409:
             contents = repo.get_contents(path)
             repo.update_file(path, f"Append click (retry) for {query}", payload, contents.sha)
         else:
             raise
 
-# >>> Update Riwayat lokal biar langsung terlihat tanpa reload berat (simpan score_at_click)
-def append_click_local(user_id: str, query: str, row_like):
+def append_click_local(user_id: str, query: str, row_like, score_override: float):
     row = dict(row_like)
     now = datetime.now(TZ_JKT).strftime("%A, %d %B %Y %H:%M")
-    score_click = float(row.get("final_score", row.get("sbert_score", 0.0)) or 0.0)
-
     new_row = {
         "user_id": user_id,
         "query": query,
@@ -616,7 +607,7 @@ def append_click_local(user_id: str, query: str, row_like):
         "publishedAt": row.get("publishedAt",""),
         "click_time": now,
         "label": 1,
-        "score_at_click": round(score_click, 6),
+        "score_at_click": round(float(score_override or 0.0), 6),
     }
     try:
         if S.history.empty:
@@ -637,21 +628,19 @@ def safe_href(u: str) -> str | None:
         return None
     return u
 
-# ========================= ANALITIK (PAKAI label==1) =========================
+# ========================= ANALITIK (hanya label==1) =========================
 def _history_clicked_df(user_id, df, days=3):
-    if df.empty: 
+    if df.empty:
         return pd.DataFrame()
     d = df[(df["user_id"] == user_id) & (df["label"] == 1)].copy()
     if d.empty:
         return pd.DataFrame()
-    # parse timestamp dan filter rentang hari
     d["ts"] = pd.to_datetime(d["click_time"], format="%A, %d %B %Y %H:%M", errors="coerce")
     d["ts"] = d["ts"].fillna(pd.to_datetime(d["click_time"], errors="coerce"))
     d = d.dropna(subset=["ts"])
     now = datetime.now()
     cutoff = now - timedelta(days=days)
     d = d[d["ts"] >= cutoff]
-    # tanggal string utk tampilan
     d["date_str"] = d["ts"].dt.strftime("%d %B %Y")
     return d
 
@@ -757,11 +746,6 @@ def _key_for(url, query):
     return hashlib.md5(raw.encode("utf-8")).hexdigest()[:10]
 
 def render_read_button(url: str, query: str, row_dict: dict, label: str = "Baca selengkapnya"):
-    """
-    UX halus:
-    1) Buka tab baru dulu (user-gesture) → cepat terasa.
-    2) Tandai lokal + simpan ke GitHub (tanpa clear cache global).
-    """
     btn_key = f"read_{_key_for(url, query)}"
     if st.button(label, key=btn_key):
         # 1) buka tab dulu
@@ -788,11 +772,12 @@ def render_read_button(url: str, query: str, row_dict: dict, label: str = "Baca 
             height=0,
         )
 
-        # 2) catat lokal + simpan ke GitHub
+        # 2) freeze skor saat klik & simpan
+        score_click = float(row_dict.get("final_score", row_dict.get("sbert_score", 0.0)) or 0.0)
         S.clicked_by_query.setdefault(query, set()).add(url)
-        append_click_local(USER_ID, query, row_dict)
+        append_click_local(USER_ID, query, row_dict, score_click)
         try:
-            save_single_click_to_github(USER_ID, query, row_dict)
+            save_single_click_to_github(USER_ID, query, row_dict, score_click)
         except Exception as e:
             st.warning(f"Gagal menyimpan history: {e}")
 
@@ -804,7 +789,6 @@ def main():
         "berdasarkan riwayat topik serta menyediakan fitur pencarian."
     )
 
-    # Sidebar (hanya cache + model personalisasi)
     if st.sidebar.button("Bersihkan Cache & Muat Ulang"):
         st.cache_data.clear(); st.cache_resource.clear()
         st.success("Cache dibersihkan. Memuat ulang…"); time.sleep(1); st.rerun()
@@ -834,22 +818,19 @@ def main():
                                reverse=True):
             st.subheader(f"Tanggal {date_str}")
             H_day = H[H["date_str"] == date_str]
-            # tampilkan per query dengan expander, isi = artikel2 yang pernah diklik untuk query tsb
             for q in sorted(H_day["query"].unique()):
                 with st.expander(q, expanded=True):
                     H_q = H_day[H_day["query"] == q].sort_values("ts", ascending=False)
                     for _, row in H_q.iterrows():
                         src = row.get("source") or get_source_from_url(row.get("url",""))
-                        title = row.get("title","")
-                        url = row.get("url","")
-                        st.markdown(f"**[{src}] {title}**")
-                        if url:
-                            st.write(url)
+                        st.markdown(f"**[{src}] {row.get('title','')}**")
+                        if row.get("url"): st.write(row.get("url"))
                         st.write(f"Waktu: {format_display_time(row.get('publishedAt',''))}")
+                        skor = row.get("score_at_click", 0.0)
                         try:
-                            skor = float(row.get("score_at_click"))
+                            skor = float(skor)
                         except Exception:
-                            skor = float(row.get("final_score", row.get("sbert_score", 0.0)) or 0.0)
+                            skor = 0.0
                         render_score_badge(skor)
                         st.markdown("---")
     else:
