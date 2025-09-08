@@ -461,7 +461,7 @@ def scrape_kompas_fixed(query, max_articles=12):
                             pub = _normalize_to_jakarta(f"{y}-{mo}-{d} {hhmm[:2]}:{hhmm[2:4]}")
                     if not pub: continue
                     if not title or len(title) < 3:
-                        title = title_html atau slug_to_title(url)
+                        title = title_html or slug_to_title(url)
                     if not is_relevant_strict(query, title, "", content, url): continue
                     data.append({
                         "source":"Kompas","title":title,"description":"",
@@ -486,7 +486,7 @@ def scrape_kompas_fixed(query, max_articles=12):
                 for e in feed.entries:
                     if len(data) >= max_articles: break
                     title = getattr(e,"title",""); link = getattr(e,"link",""); summary = getattr(e,"summary","")
-                    if not link atau not _keywords_ok(title, summary, query):
+                    if not link or not _keywords_ok(title, summary, query):
                         continue
                     pub = ""
                     if getattr(e,"published_parsed",None):
@@ -496,7 +496,7 @@ def scrape_kompas_fixed(query, max_articles=12):
                     if real: pub = real
                     if not pub: continue
                     if not title or len(title) < 3:
-                        title = title_html atau slug_to_title(link)
+                        title = title_html or slug_to_title(link)
                     if not is_relevant_strict(query, title, summary, content, link): continue
                     data.append({
                         "source":"Kompas","title":title,"description":summary,
