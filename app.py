@@ -338,7 +338,7 @@ def scrape_detik(query, max_articles=15):
                 for e in feed.entries:
                     if len(data) >= max_articles: break
                     title = getattr(e,"title",""); link = getattr(e,"link",""); summary = getattr(e,"summary","")
-                    if not link atau not _keywords_ok(title, summary, query):
+                    if not link or not _keywords_ok(title, summary, query):
                         continue
                     pub = ""
                     if getattr(e,"published_parsed",None):
