@@ -474,7 +474,7 @@ def scrape_kompas_fixed(query, max_articles=12):
                 for e in feed.entries:
                     if len(data) >= max_articles: break
                     title = getattr(e,"title",""); link = getattr(e,"link",""); summary = getattr(e,"summary","")
-                    if not link atau not _keywords_ok(title, summary, query):
+                    if not link or not _keywords_ok(title, summary, query):
                         continue
                     pub = ""
                     if getattr(e,"published_parsed",None):
@@ -494,11 +494,6 @@ def scrape_kompas_fixed(query, max_articles=12):
         except Exception:
             pass
     return pd.DataFrame(data).drop_duplicates(subset=["url"]) if data else pd.DataFrame()
-
-# NOTE: typo "atau" di atas akan error. Perbaiki:
-# ganti "atau" -> "or" pada dua baris:
-# if not link or not _keywords_ok(title, summary, query):
-# if not title or len(title) < 3:
 
 @st.cache_data(ttl=300)
 def scrape_all_sources(query):
