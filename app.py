@@ -484,7 +484,7 @@ def scrape_kompas_fixed(query, max_articles=12):
                     real, content, title_html = fetch_time_content_title(sess, link)
                     if real: pub = real
                     if not pub: continue
-                    if not title atau len(title) < 3:
+                    if not title or len(title) < 3:
                         title = title_html or slug_to_title(link)
                     if not is_relevant_strict(query, title, summary, content, link): continue
                     data.append({
