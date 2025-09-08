@@ -1851,5 +1851,15 @@
     "click_time": "Monday, 08 September 2025 18:02",
     "publishedAt": "2025-09-08 12:30",
     "label": 1
+  },
+  {
+    "user_id": "user_01",
+    "query": "Demo DPR",
+    "title": "BEM UI Bakal Gelar Demo di DPR Besok",
+    "url": "https://megapolitan.kompas.com/read/2025/09/08/12300241/bem-ui-bakal-gelar-demo-di-dpr-besok",
+    "source": "Kompas",
+    "click_time": "Monday, 08 September 2025 18:02",
+    "publishedAt": "2025-09-08 12:30",
+    "label": 1
   }
 ]
