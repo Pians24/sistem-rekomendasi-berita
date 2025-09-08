@@ -1861,5 +1861,15 @@
     "click_time": "Monday, 08 September 2025 18:02",
     "publishedAt": "2025-09-08 12:30",
     "label": 1
+  },
+  {
+    "user_id": "user_01",
+    "query": "Demo DPR",
+    "title": "Kapolri Gandeng BIN Cari Dalang Kerusuhan Demo",
+    "url": "https://www.cnnindonesia.com/nasional/20250908145052-12-1271255/kapolri-gandeng-bin-cari-dalang-kerusuhan-demo",
+    "source": "CNN",
+    "click_time": "Monday, 08 September 2025 18:08",
+    "publishedAt": "2025-09-08 15:03",
+    "label": 1
   }
 ]
