@@ -54,7 +54,7 @@ def render_score_badge(score: float, label: str = "Skor"):
         f"<span style=\"display:inline-block;padding:2px 8px;border-radius:6px;"
         f"background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.10);\">"
         f"<span style=\"font-family:ui-monospace,SFMono-Regular,Menlo,Monaco,Consolas,"
-        f"'Liberation Mono','Courier New',monospace;font-weight:700;letter-spacing:.2px;"
+        f"'Liberation Mono','Courier New',monospace;font-weight:700;letter-spacing=.2px;"
         f"color:#2ecc71;\">{val:.2f}</span></span>"
     )
     st.markdown(html, unsafe_allow_html=True)
@@ -519,8 +519,10 @@ def load_history_from_github():
         data = json.loads(contents.decoded_content.decode("utf-8"))
         if data:
             df = pd.DataFrame(data)
-            for col in ["user_id","query","click_time","publishedAt"]:
-                if col not in df.columns: df[col] = None
+            # Pastikan kolom penting tersedia
+            for col in ["user_id","query","click_time","publishedAt","label"]:
+                if col not in df.columns:
+                    df[col] = 0 if col == "label" else None
             return df
         return pd.DataFrame()
     except Exception as e:
@@ -631,15 +633,16 @@ def safe_href(u: str) -> str | None:
 
 # ========================= ANALITIK =========================
 def get_recent_queries_by_days(user_id, df, days=3):
-    if df.empty or "user_id" not in df.columns or "click_time" not in df.columns:
+    """Tampilkan hanya kueri yang PERNAH DIKLIK (label==1) dalam N hari terakhir."""
+    need = {"user_id","click_time","label"}
+    if df.empty or not need.issubset(df.columns):
         return {}
-    d = df[df["user_id"] == user_id].copy()
+    d = df[(df["user_id"] == user_id) & (df["label"] == 1)].copy()  # hanya klik
     d = d.drop_duplicates(subset=["user_id","query","click_time"])
     d["ts"] = pd.to_datetime(d["click_time"], format="%A, %d %B %Y %H:%M", errors="coerce")
     d["ts"] = d["ts"].fillna(pd.to_datetime(d["click_time"], errors="coerce"))
     d = d.dropna(subset=["ts"])
-    now = datetime.now()
-    cutoff = now - timedelta(days=days)
+    cutoff = datetime.now(TZ_JKT) - timedelta(days=days)
     d = d[d["ts"] >= cutoff]
     if d.empty: return {}
     d["date"] = d["ts"].dt.strftime("%d %B %Y")
@@ -648,19 +651,19 @@ def get_recent_queries_by_days(user_id, df, days=3):
     return {k: grouped[k] for k in sorted_dates}
 
 def trending_by_query_frequency(user_id, df, days=3):
-    if df.empty or "user_id" not in df.columns or "query" not in df.columns or "click_time" not in df.columns:
+    """Trending dihitung dari kueri yang DIKLIK saja (label==1)."""
+    need_cols = {"user_id","query","click_time","label"}
+    if df.empty or not need_cols.issubset(df.columns):
         return []
-    d = df[df["user_id"] == user_id].copy()
+    d = df[(df["user_id"] == user_id) & (df["label"] == 1)].copy()  # hanya klik
     d = d.drop_duplicates(subset=["user_id","query","click_time"])
     d["ts"] = pd.to_datetime(d["click_time"], format="%A, %d %B %Y %H:%M", errors="coerce")
     d["ts"] = d["ts"].fillna(pd.to_datetime(d["click_time"], errors="coerce"))
     d = d.dropna(subset=["ts"])
-    now = datetime.now()
-    cutoff = now - timedelta(days=days)
+    cutoff = datetime.now(TZ_JKT) - timedelta(days=days)
     d = d[d["ts"] >= cutoff]
     if d.empty:
         return []
-
     agg = d.groupby("query").agg(
         total=("query", "count"),
         days=("ts", lambda s: s.dt.date.nunique()),
@@ -668,7 +671,6 @@ def trending_by_query_frequency(user_id, df, days=3):
     ).reset_index()
     agg = agg.sort_values(by=["days", "total", "last_ts"], ascending=[False, False, False])
     return list(agg[["query", "total"]].itertuples(index=False, name=None))
-
 
 # ========================= TRAIN & RECOMMEND =========================
 def build_training_data(user_id):
@@ -854,7 +856,7 @@ def main():
                                 render_score_badge(skor)
                                 st.markdown("---")
     else:
-        st.info("Belum ada riwayat pencarian pada 3 hari terakhir.")
+        st.info("Belum ada riwayat pencarian (berdasarkan klik) pada 3 hari terakhir.")
 
     st.markdown("---")
 
@@ -889,7 +891,7 @@ def main():
                     render_read_button(row["url"], q_top, row.to_dict())
                     st.markdown("---")
     else:
-        st.info("🔥 Tidak ada topik yang sering dicari dalam 3 hari terakhir.")
+        st.info("🔥 Tidak ada topik yang sering diklik dalam 3 hari terakhir.")
 
     st.markdown("---")
 
