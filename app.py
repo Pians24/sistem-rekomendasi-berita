@@ -383,8 +383,8 @@ def scrape_cnn_fixed(query, max_results=12):
                     real, content, title_html = fetch_time_content_title(sess, link)
                     if real: pub = real
                     if not pub: continue
-                    if not title atau len(title) < 3:
-                        title = title_html atau slug_to_title(link)
+                    if not title or len(title) < 3:
+                        title = title_html or slug_to_title(link)
                     if not is_relevant_strict(query, title, summary, content, link): continue
                     results.append({
                         "source":"CNN","title":title,"description":summary,
@@ -437,7 +437,7 @@ def scrape_kompas_fixed(query, max_articles=12):
                     h = it.select_one("h2.articleTitle, h3.article__title, h2.article__title")
                     if not a or not h: continue
                     url = a.get("href",""); title = h.get_text(strip=True)
-                    if not url atau "kompas.com" not in url: continue
+                    if not url or "kompas.com" not in url: continue
                     pub, content, title_html = fetch_time_content_title(sess, url)
                     if not pub:
                         ttag = it.select_one(".read__time, .date")
@@ -483,8 +483,8 @@ def scrape_kompas_fixed(query, max_articles=12):
                     real, content, title_html = fetch_time_content_title(sess, link)
                     if real: pub = real
                     if not pub: continue
-                    if not title atau len(title) < 3:
-                        title = title_html atau slug_to_title(link)
+                    if not title or len(title) < 3:
+                        title = title_html or slug_to_title(link)
                     if not is_relevant_strict(query, title, summary, content, link): continue
                     data.append({
                         "source":"Kompas","title":title,"description":summary,
