@@ -1907,5 +1907,17 @@
     "label": 1,
     "clicked_final_score": 0.8198981460084974,
     "clicked_sbert_score": 0.9030065536499023
+  },
+  {
+    "user_id": "user_01",
+    "query": "menhan sjafrie",
+    "title": "Masih Ada Demo, Sjafrie Sjamsoeddin Pastikan Situasi Nasional Aman",
+    "url": "https://www.cnnindonesia.com/nasional/20250909173440-32-1271785/masih-ada-demo-sjafrie-sjamsoeddin-pastikan-situasi-nasional-aman",
+    "source": "CNN",
+    "click_time": "Tuesday, 09 September 2025 19:05",
+    "publishedAt": "2025-09-09 17:49",
+    "label": 1,
+    "clicked_final_score": 0.6127588250823077,
+    "clicked_sbert_score": 0.6630445122718811
   }
 ]
