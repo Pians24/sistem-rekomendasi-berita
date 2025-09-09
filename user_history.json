@@ -1871,5 +1871,17 @@
     "click_time": "Monday, 08 September 2025 18:08",
     "publishedAt": "2025-09-08 15:03",
     "label": 1
+  },
+  {
+    "user_id": "user_01",
+    "query": "menhan sjafrie",
+    "title": "Video Menhan Sjafrie Sjamsoeddin Jadi Menko Polkam Ad Interim",
+    "url": "https://20.detik.com/detikupdate/20250909-250909075/video-menhan-sjafrie-sjamsoeddin-jadi-menko-polkam-ad-interim",
+    "source": "Detik",
+    "click_time": "Tuesday, 09 September 2025 19:02",
+    "publishedAt": "2025-09-09 18:32",
+    "label": 1,
+    "clicked_final_score": 0.8190551769599415,
+    "clicked_sbert_score": 0.8544129133224487
   }
 ]
