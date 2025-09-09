@@ -1955,5 +1955,17 @@
     "label": 1,
     "clicked_final_score": 0.7939122520778631,
     "clicked_sbert_score": 0.8904311060905457
+  },
+  {
+    "user_id": "user_01",
+    "query": "Ferry Irwandi",
+    "title": "Menhan Sjafrie Respons Tindakan TNI Bidik Dugaan Pidana Ferry Irwandi",
+    "url": "https://www.cnnindonesia.com/nasional/20250909175503-12-1271791/menhan-sjafrie-respons-tindakan-tni-bidik-dugaan-pidana-ferry-irwandi",
+    "source": "CNN",
+    "click_time": "Tuesday, 09 September 2025 19:11",
+    "publishedAt": "2025-09-09 18:05",
+    "label": 1,
+    "clicked_final_score": 0.8079871724989682,
+    "clicked_sbert_score": 0.831635057926178
   }
 ]
