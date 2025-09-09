@@ -1895,5 +1895,17 @@
     "label": 1,
     "clicked_final_score": 0.6663506820596187,
     "clicked_sbert_score": 0.7214246988296509
+  },
+  {
+    "user_id": "user_01",
+    "query": "menhan sjafrie",
+    "title": "Sjafrie Sjamsoeddin Jamin Wilayah Nasional Aman",
+    "url": "https://nasional.kompas.com/read/2025/09/09/18000651/sjafrie-sjamsoeddin-jamin-wilayah-nasional-aman",
+    "source": "Kompas",
+    "click_time": "Tuesday, 09 September 2025 19:02",
+    "publishedAt": "2025-09-09 18:00",
+    "label": 1,
+    "clicked_final_score": 0.8198981460084974,
+    "clicked_sbert_score": 0.9030065536499023
   }
 ]
