@@ -1979,5 +1979,17 @@
     "label": 1,
     "clicked_final_score": 0.6582709877732665,
     "clicked_sbert_score": 0.6533739566802979
+  },
+  {
+    "user_id": "user_01",
+    "query": "Ferry Irwandi",
+    "title": "ICJR: TNI Lampaui Kewenangan Jika Proses Hukum Ferry Irwandi",
+    "url": "https://megapolitan.kompas.com/read/2025/09/09/15005521/icjr-tni-lampaui-kewenangan-jika-proses-hukum-ferry-irwandi",
+    "source": "Kompas",
+    "click_time": "Tuesday, 09 September 2025 19:12",
+    "publishedAt": "2025-09-09 15:00",
+    "label": 1,
+    "clicked_final_score": 0.7463221021427232,
+    "clicked_sbert_score": 0.765631377696991
   }
 ]
