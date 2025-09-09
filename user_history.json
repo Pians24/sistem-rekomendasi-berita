@@ -1919,5 +1919,17 @@
     "label": 1,
     "clicked_final_score": 0.6127588250823077,
     "clicked_sbert_score": 0.6630445122718811
+  },
+  {
+    "user_id": "user_01",
+    "query": "Demo DPR",
+    "title": "Dua Dinosaurus Pecahkan Suasana Demo Mahasiswa Di Dpr",
+    "url": "https://news.detik.com/foto-news/d-8103944/dua-dinosaurus-pecahkan-suasana-demo-mahasiswa-di-dpr",
+    "source": "Detik",
+    "click_time": "Tuesday, 09 September 2025 19:05",
+    "publishedAt": "2025-09-09 18:45",
+    "label": 1,
+    "clicked_final_score": 0.5765006240146974,
+    "clicked_sbert_score": 0.6265143156051636
   }
 ]
