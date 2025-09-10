@@ -2015,5 +2015,17 @@
     "label": 1,
     "clicked_final_score": 0.6056539144734117,
     "clicked_sbert_score": 0.5498102307319641
+  },
+  {
+    "user_id": "user_01",
+    "query": "Menkeu Purbaya",
+    "title": "Menkeu Purbaya: 10 Bulan Pemerintahan Prabowo, Kesejahteraan Rakyat Meningkat",
+    "url": "https://money.kompas.com/read/2025/09/10/142956926/menkeu-purbaya-10-bulan-pemerintahan-prabowo-kesejahteraan-rakyat-meningkat",
+    "source": "Kompas",
+    "click_time": "Wednesday, 10 September 2025 18:24",
+    "publishedAt": "2025-09-10 14:29",
+    "label": 1,
+    "clicked_final_score": 0.9374009379711372,
+    "clicked_sbert_score": 1.0
   }
 ]
