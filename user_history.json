@@ -2003,5 +2003,17 @@
     "label": 1,
     "clicked_final_score": 0.5905563212357896,
     "clicked_sbert_score": 0.5286386609077454
+  },
+  {
+    "user_id": "user_01",
+    "query": "Uya Kuya",
+    "title": "Sempat Absen Sherina Klarifikasi Soal Kucing Uya Kuya Hari Ini",
+    "url": "https://news.detik.com/berita/d-8102996/sempat-absen-sherina-klarifikasi-soal-kucing-uya-kuya-hari-ini",
+    "source": "Detik",
+    "click_time": "Wednesday, 10 September 2025 18:18",
+    "publishedAt": "2025-09-09 12:34",
+    "label": 1,
+    "clicked_final_score": 0.6056539144734117,
+    "clicked_sbert_score": 0.5498102307319641
   }
 ]
