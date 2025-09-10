@@ -2063,5 +2063,17 @@
     "label": 1,
     "clicked_final_score": 0.5724131586279603,
     "clicked_sbert_score": 0.5895566940307617
+  },
+  {
+    "user_id": "user_01",
+    "query": "Demo DPR",
+    "title": "Menkeu Purbaya Menghadap Prabowo Usai Rapat Kerja Perdana Di Dpr",
+    "url": "https://news.detik.com/berita/d-8105727/menkeu-purbaya-menghadap-prabowo-usai-rapat-kerja-perdana-di-dpr",
+    "source": "Detik",
+    "click_time": "Wednesday, 10 September 2025 18:27",
+    "publishedAt": "2025-09-10 17:51",
+    "label": 1,
+    "clicked_final_score": 0.5785620330917686,
+    "clicked_sbert_score": 0.6206068396568298
   }
 ]
