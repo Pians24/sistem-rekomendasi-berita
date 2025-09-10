@@ -1991,5 +1991,17 @@
     "label": 1,
     "clicked_final_score": 0.7463221021427232,
     "clicked_sbert_score": 0.765631377696991
+  },
+  {
+    "user_id": "user_01",
+    "query": "Uya Kuya",
+    "title": "Update Kasus Penjarahan Rumah Uya Kuya: 15 Orang Jadi Tersangka",
+    "url": "https://www.cnnindonesia.com/nasional/20250910173734-12-1272249/update-kasus-penjarahan-rumah-uya-kuya-15-orang-jadi-tersangka",
+    "source": "CNN",
+    "click_time": "Wednesday, 10 September 2025 18:18",
+    "publishedAt": "2025-09-10 17:44",
+    "label": 1,
+    "clicked_final_score": 0.5905563212357896,
+    "clicked_sbert_score": 0.5286386609077454
   }
 ]
