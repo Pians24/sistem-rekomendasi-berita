@@ -2075,5 +2075,17 @@
     "label": 1,
     "clicked_final_score": 0.5785620330917686,
     "clicked_sbert_score": 0.6206068396568298
+  },
+  {
+    "user_id": "user_01",
+    "query": "Demo DPR",
+    "title": "Ratusan Warga Tulungagung Demo Soroti Bupati Wabup Tak Harmonis",
+    "url": "https://www.detik.com/jatim/berita/d-8107638/ratusan-warga-tulungagung-demo-soroti-bupati-wabup-tak-harmonis",
+    "source": "Detik",
+    "click_time": "Thursday, 11 September 2025 20:37",
+    "publishedAt": "2025-09-11 18:35",
+    "label": 1,
+    "clicked_final_score": 0.5752072159643342,
+    "clicked_sbert_score": 0.6312694549560547
   }
 ]
