@@ -2123,5 +2123,17 @@
     "label": 1,
     "clicked_final_score": 0.7349884725648913,
     "clicked_sbert_score": 0.7443516254425049
+  },
+  {
+    "user_id": "user_01",
+    "query": "Menko Yusril",
+    "title": "Menko Yusril Sarankan 4 Jenderal TNI Berdialog dengan Ferry Irwandi",
+    "url": "https://nasional.kompas.com/read/2025/09/11/16071061/menko-yusril-sarankan-4-jenderal-tni-berdialog-dengan-ferry-irwandi",
+    "source": "Kompas",
+    "click_time": "Thursday, 11 September 2025 20:44",
+    "publishedAt": "2025-09-11 16:07",
+    "label": 1,
+    "clicked_final_score": 0.6022477289663232,
+    "clicked_sbert_score": 0.5240902900695801
   }
 ]
