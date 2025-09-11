@@ -2135,5 +2135,17 @@
     "label": 1,
     "clicked_final_score": 0.6022477289663232,
     "clicked_sbert_score": 0.5240902900695801
+  },
+  {
+    "user_id": "user_01",
+    "query": "Menko Yusril",
+    "title": "Tni Tak Bisa Laporkan Ferry Irwandi Menko Yusril Sudah Klir",
+    "url": "https://www.detik.com/kalimantan/hukum-dan-kriminal/d-8107041/tni-tak-bisa-laporkan-ferry-irwandi-menko-yusril-sudah-klir",
+    "source": "Detik",
+    "click_time": "Thursday, 11 September 2025 20:44",
+    "publishedAt": "2025-09-11 14:58",
+    "label": 1,
+    "clicked_final_score": 0.5508597237839932,
+    "clicked_sbert_score": 0.4964059591293335
   }
 ]
