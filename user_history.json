@@ -2219,5 +2219,17 @@
     "label": 1,
     "clicked_final_score": 0.8560012632010989,
     "clicked_sbert_score": 0.8497450947761536
+  },
+  {
+    "user_id": "user_01",
+    "query": "Banjir Bali",
+    "title": "Korban Banjir Bali Bertambah Jadi 18 Orang 2 Masih Dicari",
+    "url": "https://www.detik.com/jatim/berita/d-8108923/korban-banjir-bali-bertambah-jadi-18-orang-2-masih-dicari",
+    "source": "Detik",
+    "click_time": "Friday, 12 September 2025 18:48",
+    "publishedAt": "2025-09-12 16:17",
+    "label": 1,
+    "clicked_final_score": 0.6596377187829325,
+    "clicked_sbert_score": 0.6417259573936462
   }
 ]
