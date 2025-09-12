@@ -2195,5 +2195,17 @@
     "label": 1,
     "clicked_final_score": 0.6910881553527942,
     "clicked_sbert_score": 0.6595779657363892
+  },
+  {
+    "user_id": "user_01",
+    "query": "Ferry Irwandi",
+    "title": "Terganjal Putusan MK, TNI Cari Celah Lain Pidanakan Ferry Irwandi",
+    "url": "https://www.kompas.com/kalimantan-timur/read/2025/09/12/113000388/terganjal-putusan-mk-tni-cari-celah-lain-pidanakan-ferry",
+    "source": "Kompas",
+    "click_time": "Friday, 12 September 2025 18:29",
+    "publishedAt": "2025-09-12 11:30",
+    "label": 1,
+    "clicked_final_score": 0.7561777640847346,
+    "clicked_sbert_score": 0.7499577403068542
   }
 ]
