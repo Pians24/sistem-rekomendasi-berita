@@ -2183,5 +2183,17 @@
     "label": 1,
     "clicked_final_score": 0.7145683163454337,
     "clicked_sbert_score": 0.7198164463043213
+  },
+  {
+    "user_id": "user_01",
+    "query": "Ferry Irwandi",
+    "title": "Ferry Irwandi Soal Tni Temukan Pidana Lain Kenapa Diperkarakan Segitunya",
+    "url": "https://news.detik.com/berita/d-8109034/ferry-irwandi-soal-tni-temukan-pidana-lain-kenapa-diperkarakan-segitunya",
+    "source": "Detik",
+    "click_time": "Friday, 12 September 2025 18:29",
+    "publishedAt": "2025-09-12 16:17",
+    "label": 1,
+    "clicked_final_score": 0.6910881553527942,
+    "clicked_sbert_score": 0.6595779657363892
   }
 ]
