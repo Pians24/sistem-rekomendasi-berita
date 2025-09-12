@@ -2147,5 +2147,17 @@
     "label": 1,
     "clicked_final_score": 0.5508597237839932,
     "clicked_sbert_score": 0.4964059591293335
+  },
+  {
+    "user_id": "user_01",
+    "query": "Ledakan Pamulang",
+    "title": "Video Gegana Tak Temukan Bom Di Tkp Ledakan Rumah Pamulang",
+    "url": "https://20.detik.com/detikupdate/20250912-250912107/video-gegana-tak-temukan-bom-di-tkp-ledakan-rumah-pamulang",
+    "source": "Detik",
+    "click_time": "Friday, 12 September 2025 18:24",
+    "publishedAt": "2025-09-12 18:05",
+    "label": 1,
+    "clicked_final_score": 0.6428784111887756,
+    "clicked_sbert_score": 0.6975275874137878
   }
 ]
