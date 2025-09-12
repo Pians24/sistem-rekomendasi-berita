@@ -2231,5 +2231,17 @@
     "label": 1,
     "clicked_final_score": 0.6596377187829325,
     "clicked_sbert_score": 0.6417259573936462
+  },
+  {
+    "user_id": "user_01",
+    "query": "Banjir Bali",
+    "title": "Suzuki Peduli Banjir Bali: Siapkan Bantuan Tepat",
+    "url": "https://otomotif.kompas.com/read/2025/09/12/155649415/suzuki-peduli-banjir-bali-siapkan-bantuan-tepat",
+    "source": "Kompas",
+    "click_time": "Friday, 12 September 2025 18:49",
+    "publishedAt": "2025-09-12 15:56",
+    "label": 1,
+    "clicked_final_score": 0.6173264478311966,
+    "clicked_sbert_score": 0.6049570441246033
   }
 ]
