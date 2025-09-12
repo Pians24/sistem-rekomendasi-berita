@@ -2171,5 +2171,17 @@
     "label": 1,
     "clicked_final_score": 0.7607635540126373,
     "clicked_sbert_score": 0.843505322933197
+  },
+  {
+    "user_id": "user_01",
+    "query": "Ledakan Pamulang",
+    "title": "Personel Brimob Diterjunkan Amankan Lokasi Ledakan Pamulang Tangsel",
+    "url": "https://www.cnnindonesia.com/nasional/20250912125044-12-1272921/personel-brimob-diterjunkan-amankan-lokasi-ledakan-pamulang-tangsel",
+    "source": "CNN",
+    "click_time": "Friday, 12 September 2025 18:26",
+    "publishedAt": "2025-09-12 14:43",
+    "label": 1,
+    "clicked_final_score": 0.7145683163454337,
+    "clicked_sbert_score": 0.7198164463043213
   }
 ]
