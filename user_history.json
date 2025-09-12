@@ -2207,5 +2207,17 @@
     "label": 1,
     "clicked_final_score": 0.7561777640847346,
     "clicked_sbert_score": 0.7499577403068542
+  },
+  {
+    "user_id": "user_01",
+    "query": "Ferry Irwandi",
+    "title": "TNI Akan Kaji Dugaan Tindak Pidana Lain Ferry Irwandi",
+    "url": "https://nasional.kompas.com/read/2025/09/11/17484171/tni-akan-kaji-dugaan-tindak-pidana-lain-ferry-irwandi",
+    "source": "Kompas",
+    "click_time": "Friday, 12 September 2025 18:44",
+    "publishedAt": "2025-09-11 17:48",
+    "label": 1,
+    "clicked_final_score": 0.8560012632010989,
+    "clicked_sbert_score": 0.8497450947761536
   }
 ]
