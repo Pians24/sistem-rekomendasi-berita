@@ -2159,5 +2159,17 @@
     "label": 1,
     "clicked_final_score": 0.6428784111887756,
     "clicked_sbert_score": 0.6975275874137878
+  },
+  {
+    "user_id": "user_01",
+    "query": "Ledakan Pamulang",
+    "title": "Kesaksian Warga soal Ledakan Misterius di Pamulang: Suara dari Langit hingga Benda Jatuh",
+    "url": "https://www.kompas.com/jawa-barat/read/2025/09/12/180000588/kesaksian-warga-soal-ledakan-misterius-di-pamulang--suara-dari-langit",
+    "source": "Kompas",
+    "click_time": "Friday, 12 September 2025 18:25",
+    "publishedAt": "2025-09-12 18:00",
+    "label": 1,
+    "clicked_final_score": 0.7607635540126373,
+    "clicked_sbert_score": 0.843505322933197
   }
 ]
