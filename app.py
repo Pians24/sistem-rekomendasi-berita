@@ -42,6 +42,12 @@ for k, v in {
     if k not in S:
         S[k] = v
 
+# ======== UTIL KEY UNIK UNTUK UI ========
+def make_ui_key(prefix: str, *parts) -> str:
+    raw = "|".join(str(p) for p in parts)
+    h = hashlib.blake2b(raw.encode("utf-8"), digest_size=8).hexdigest()
+    return f"{prefix}:{h}"
+
 # ======== SKOR CHIP ========
 def render_score_badge(score: float, label: str = "Skor"):
     try:
@@ -761,12 +767,9 @@ def compute_score_for_history_item(query: str, title: str, description: str = ""
     return float(final), float(sbert)
 
 # ========================= TOMBOL BACA =========================
-def _key_for(url, query):
-    raw = f"{url}|{query}"
-    return hashlib.md5(raw.encode("utf-8")).hexdigest()[:10]
-
-def render_read_button(url: str, query: str, row_dict: dict, label: str = "Baca selengkapnya"):
-    btn_key = f"read_{_key_for(url, query)}"
+def render_read_button(url: str, query: str, row_dict: dict, label: str = "Baca selengkapnya", ctx: str = "default"):
+    # ctx = "trending" / "search" / "history" dsb. untuk menghindari key tabrakan antar seksi
+    btn_key = make_ui_key(f"btn.{ctx}", url, query)
     if st.button(label, key=btn_key):
         href = safe_href(url)
         if href is None:
@@ -806,7 +809,7 @@ def main():
     )
 
     # Sidebar (cache + model)
-    if st.sidebar.button("Bersihkan Cache & Muat Ulang"):
+    if st.sidebar.button("Bersihkan Cache & Muat Ulang", key="btn:clear_cache"):
         st.cache_data.clear(); st.cache_resource.clear()
         st.success("Cache dibersihkan. Memuat ulang…"); time.sleep(1); st.rerun()
 
@@ -845,13 +848,15 @@ def main():
             grouped = dfh.groupby("date")["query"].unique().to_dict()
             for date in sorted(grouped.keys(), key=lambda x: datetime.strptime(x, "%d %B %Y"), reverse=True):
                 st.subheader(f"Tanggal {date}")
+                # expander label bisa sama di tanggal berbeda; beri key unik
                 for q in sorted(set(grouped[date])):
-                    with st.expander(f"- {q}", expanded=True):
+                    exp_key = make_ui_key("expander", date, q)
+                    with st.expander(f"- {q}", expanded=True, key=exp_key):
                         sub = dfh[(dfh["query"] == q) & (dfh["date"] == date)].copy()
                         if sub.empty:
                             st.info("❗ Belum ada artikel yang diklik untuk query ini.")
                             continue
-                        for idx, row in sub.iterrows():
+                        for _, row in sub.iterrows():
                             src = row.get("source") or get_source_from_url(row.get("url",""))
                             st.markdown(f"**[{src}] {row.get('title','')}**")
                             st.write(row.get("url",""))
@@ -869,7 +874,7 @@ def main():
                                     q, row.get("title",""), "", "", clf
                                 )
                                 score = final_sc
-                                # simpan ke S.history (in-memory) agar tidak 0.00 di render berikutnya
+                                # simpan ke S.history (in-memory)
                                 try:
                                     S.history.loc[(S.history["user_id"]==row["user_id"]) &
                                                   (S.history["url"]==row["url"]) &
@@ -913,7 +918,7 @@ def main():
                     st.write(f"Waktu: *{format_display_time(row.get('publishedAt',''))}*")
                     skor = row.get("final_score", row.get("sbert_score", 0.0))
                     render_score_badge(skor)
-                    render_read_button(row["url"], q_top, row.to_dict())
+                    render_read_button(row["url"], q_top, row.to_dict(), ctx="trending")
                     st.markdown("---")
     else:
         st.info("🔥 Tidak ada topik yang sering diklik dalam 3 hari terakhir.")
@@ -956,7 +961,7 @@ def main():
                 st.write(f"Waktu: *{format_display_time(row.get('publishedAt',''))}*")
                 skor = row.get("final_score", row.get("sbert_score", 0.0))
                 render_score_badge(skor)
-                render_read_button(row["url"], S.current_query, row.to_dict())
+                render_read_button(row["url"], S.current_query, row.to_dict(), ctx="search")
                 st.markdown("---")
 
             clicked_cnt = len(S.clicked_by_query.get(S.current_query, set()))
