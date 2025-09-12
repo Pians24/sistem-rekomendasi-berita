@@ -2243,5 +2243,17 @@
     "label": 1,
     "clicked_final_score": 0.6173264478311966,
     "clicked_sbert_score": 0.6049570441246033
+  },
+  {
+    "user_id": "user_01",
+    "query": "Banjir Bali",
+    "title": "Update Banjir Bali: 18 Tewas, 2 Hilang, 659 Jiwa Terdampak",
+    "url": "https://www.cnnindonesia.com/nasional/20250912145941-20-1273020/update-banjir-bali-18-tewas-2-hilang-659-jiwa-terdampak",
+    "source": "CNN",
+    "click_time": "Friday, 12 September 2025 18:49",
+    "publishedAt": "2025-09-12 15:17",
+    "label": 1,
+    "clicked_final_score": 0.9242519460601478,
+    "clicked_sbert_score": 1.0
   }
 ]
