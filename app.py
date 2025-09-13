@@ -222,7 +222,7 @@ def _parse_id_date_text(text):
         return dt.strftime("%Y-%m-%d %H:%M")
     return ""
 
-@st.cache_data
+# !!! HAPUS cache di fungsi yang menerima BeautifulSoup (lebih aman)
 def extract_published_at_from_article_html(art_soup, url=""):
     try:
         for s in art_soup.find_all("script", attrs={"type":"application/ld+json"}):
@@ -527,7 +527,6 @@ def load_history_from_github():
             df = pd.DataFrame(data)
             for col in ["user_id","query","click_time","publishedAt","label","title","url","source","clicked_final_score","clicked_sbert_score","final_score","sbert_score"]:
                 if col not in df.columns: df[col] = None
-            # pastikan kolom skor numerik
             for sc in ["clicked_final_score","clicked_sbert_score","final_score","sbert_score"]:
                 df[sc] = pd.to_numeric(df[sc], errors="coerce")
             return df
@@ -536,7 +535,6 @@ def load_history_from_github():
         st.error(f"Gagal memuat riwayat dari GitHub: {e}")
         return pd.DataFrame()
 
-# (Kompat batch)
 def save_interaction_to_github(user_id, query, all_articles, clicked_urls):
     g = get_github_client()
     repo = g.get_user(st.secrets["repo_owner"]).get_repo(st.secrets["repo_name"])
@@ -562,7 +560,6 @@ def save_interaction_to_github(user_id, query, all_articles, clicked_urls):
     updated = json.dumps(history_list, indent=2, ensure_ascii=False)
     repo.update_file(st.secrets["file_path"], f"Update history for {query}", updated, contents.sha)
 
-# >>> Simpan 1 klik langsung (bekukan skor)
 def save_single_click_to_github(user_id: str, query: str, row_like):
     row = dict(row_like)
     now = datetime.now(TZ_JKT).strftime("%A, %d %B %Y %H:%M")
@@ -604,7 +601,6 @@ def save_single_click_to_github(user_id: str, query: str, row_like):
         else:
             raise
 
-# >>> Update Riwayat lokal langsung
 def append_click_local(user_id: str, query: str, row_like):
     row = dict(row_like)
     now = datetime.now(TZ_JKT).strftime("%A, %d %B %Y %H:%M")
@@ -628,14 +624,6 @@ def append_click_local(user_id: str, query: str, row_like):
     except Exception:
         pass
 
-# >>> Sanitasi URL
-def safe_href(u: str) -> str | None:
-    if not u: return None
-    if u.startswith("//"): u = "https:" + u
-    pu = urllib.parse.urlparse(u)
-    if pu.scheme not in ("http", "https"): return None
-    return u
-
 # ========================= ANALITIK — KLIK SAJA =========================
 def get_recent_queries_by_days(user_id, df, days=3):
     if df.empty or "user_id" not in df.columns or "click_time" not in df.columns:
@@ -645,7 +633,16 @@ def get_recent_queries_by_days(user_id, df, days=3):
     d = d.drop_duplicates(subset=["user_id","query","click_time"])
     d["ts"] = pd.to_datetime(d["click_time"], errors="coerce")
     d = d.dropna(subset=["ts"])
-    cutoff = datetime.now() - timedelta(days=days)
+    # Normalisasi ke Asia/Jakarta
+    try:
+        if d["ts"].dt.tz is None:
+            d["ts"] = d["ts"].dt.tz_localize(TZ_JKT, nonexistent="NaT", ambiguous="NaT")
+        else:
+            d["ts"] = d["ts"].dt.tz_convert(TZ_JKT)
+    except Exception:
+        d["ts"] = pd.to_datetime(d["ts"], errors="coerce").dt.tz_localize(TZ_JKT, nonexistent="NaT", ambiguous="NaT")
+
+    cutoff = datetime.now(TZ_JKT) - timedelta(days=days)
     d = d[d["ts"] >= cutoff]
     if d.empty: return {}
     d["date"] = d["ts"].dt.strftime("%d %B %Y")
@@ -661,7 +658,16 @@ def trending_by_query_frequency(user_id, df, days=3):
     d = d.drop_duplicates(subset=["user_id","query","click_time"])
     d["ts"] = pd.to_datetime(d["click_time"], errors="coerce")
     d = d.dropna(subset=["ts"])
-    cutoff = datetime.now() - timedelta(days=days)
+    # Normalisasi ke Asia/Jakarta
+    try:
+        if d["ts"].dt.tz is None:
+            d["ts"] = d["ts"].dt.tz_localize(TZ_JKT, nonexistent="NaT", ambiguous="NaT")
+        else:
+            d["ts"] = d["ts"].dt.tz_convert(TZ_JKT)
+    except Exception:
+        d["ts"] = pd.to_datetime(d["ts"], errors="coerce").dt.tz_localize(TZ_JKT, nonexistent="NaT", ambiguous="NaT")
+
+    cutoff = datetime.now(TZ_JKT) - timedelta(days=days)
     d = d[d["ts"] >= cutoff]
     if d.empty:
         return []
@@ -718,7 +724,7 @@ def recommend(
     clf,
     n_per_source=3,
     min_score=0.55,
-    ensure_all_sources=False,   # (belum dipakai; biarkan untuk kompatibilitas)
+    ensure_all_sources=False,
     use_lr_boost=True,
     alpha=0.25,
     per_source_group=True
@@ -728,74 +734,52 @@ def recommend(
     - FIX: filter baris invalid (publishedAt) sebelum encoding agar vektor & df sinkron.
     - Skor final = blend SBERT (similarity-normalized) + (opsional) LR + bonus kecil jika judul mengandung query.
     """
-
-    # 0) Early exit
     if df.empty:
         return pd.DataFrame()
 
-    # 1) Unik per URL & siapkan teks untuk embedding
     df = df.copy().drop_duplicates(subset=["url"])
     df["processed"] = df.apply(
-        lambda r: preprocess_text(
-            f"{r.get('title','')} {r.get('description','')} {r.get('content','')}"
-        ),
+        lambda r: preprocess_text(f"{r.get('title','')} {r.get('description','')} {r.get('content','')}"),
         axis=1
     )
 
-    # 2) NORMALISASI TANGGAL & FILTER lebih awal (FIX utama)
+    # Filter tanggal lebih awal (FIX utama)
     df["publishedAt_dt"] = pd.to_datetime(df["publishedAt"], errors="coerce")
     df = df.dropna(subset=["publishedAt_dt"])
     if df.empty:
         return pd.DataFrame()
 
-    # 3) ENCODE setelah df final agar sinkron
+    # Encode setelah DF final → sinkron
     art_vecs = model_sbert.encode(df["processed"].tolist())
     q_vec = model_sbert.encode([preprocess_text(query)])
 
-    # 4) SBERT similarity (0..1) dengan min-max scaling per batch
     sims = cosine_similarity(q_vec, art_vecs)[0]
     s_min, s_max = float(sims.min()), float(sims.max())
     sbert_score = (sims - s_min) / (s_max - s_min) if s_max > s_min else sims
     df["sbert_score"] = sbert_score
 
-    # 5) (Opsional) LR-boost + bonus judul mengandung query
     if clf is not None and use_lr_boost:
         lr_score = clf.predict_proba(art_vecs)[:, 1]
-        bonus = df["title"].apply(
-            lambda t: 0.05 if (t and query and query.lower() in t.lower()) else 0.0
-        ).values
+        bonus = df["title"].apply(lambda t: 0.05 if (t and query and query.lower() in t.lower()) else 0.0).values
         final = ((1 - alpha) * df["sbert_score"].values) + (alpha * lr_score) + bonus
     else:
         final = df["sbert_score"].values
 
     df["final_score"] = final.clip(0.0, 1.0)
 
-    # 6) Filter berdasarkan ambang skor (fallback: pakai semua kalau kosong)
     filtered = df[df["final_score"] >= min_score].copy()
     if filtered.empty:
         filtered = df.copy()
 
-    # 7) Ambil top-N per sumber atau global, prioritaskan terbaru + skor tinggi
     def _top_n(group):
-        return group.sort_values(
-            ["publishedAt_dt", "final_score"],
-            ascending=[False, False]
-        ).head(n_per_source)
+        return group.sort_values(["publishedAt_dt", "final_score"], ascending=[False, False]).head(n_per_source)
 
     if per_source_group:
         got = filtered.groupby("source", group_keys=False).apply(_top_n)
     else:
-        got = filtered.sort_values(
-            ["publishedAt_dt", "final_score"],
-            ascending=[False, False]
-        ).head(3 * n_per_source)
+        got = filtered.sort_values(["publishedAt_dt", "final_score"], ascending=[False, False]).head(3 * n_per_source)
 
-    # 8) Urutan akhir yang konsisten
-    return got.sort_values(
-        ["publishedAt_dt", "final_score"],
-        ascending=[False, False]
-    ).reset_index(drop=True)
-
+    return got.sort_values(["publishedAt_dt", "final_score"], ascending=[False, False]).reset_index(drop=True)
 
 # ============= SKOR ULANG (BACKFILL) UNTUK ENTRI LAMA TANPA SKOR =============
 def compute_score_for_history_item(query: str, title: str, description: str = "", content: str = "", clf=None):
@@ -815,7 +799,6 @@ def compute_score_for_history_item(query: str, title: str, description: str = ""
 
 # ========================= TOMBOL BACA =========================
 def render_read_button(url: str, query: str, row_dict: dict, label: str = "Baca selengkapnya", ctx: str = "default"):
-    # ctx = "trending" / "search" / "history" dsb. untuk menghindari key tabrakan antar seksi
     btn_key = make_ui_key(f"btn.{ctx}", url, query)
     if st.button(label, key=btn_key):
         href = safe_href(url)
@@ -847,6 +830,14 @@ def render_read_button(url: str, query: str, row_dict: dict, label: str = "Baca 
         except Exception as e:
             st.warning(f"Gagal menyimpan history: {e}")
 
+# >>> Sanitasi URL
+def safe_href(u: str) -> str | None:
+    if not u: return None
+    if u.startswith("//"): u = "https:" + u
+    pu = urllib.parse.urlparse(u)
+    if pu.scheme not in ("http", "https"): return None
+    return u
+
 # ========================= APP =========================
 def main():
     st.title("📰 SISTEM REKOMENDASI BERITA")
@@ -876,66 +867,72 @@ def main():
     else:
         st.sidebar.info("Model belum bisa dilatih karena riwayat tidak mencukupi.")
 
-# ========== (1) RIWAYAT PENCARIAN BERITA — hanya item yang DIKLIK ==========
-st.header("📚 RIWAYAT PENCARIAN BERITA")
-dfh = S.history.copy()
-if dfh.empty:
-    st.info("Belum ada riwayat pencarian pada 3 hari terakhir.")
-else:
-    cond_label = (dfh["label"] == 1) if "label" in dfh.columns else True
-    dfh = dfh[(dfh["user_id"] == USER_ID) & cond_label].copy()
-    dfh["ts"] = pd.to_datetime(dfh["click_time"], errors="coerce")
-    dfh = dfh.dropna(subset=["ts"])
-
-    # (opsional, lebih konsisten zona waktu)
-    cutoff = datetime.now(TZ_JKT) - timedelta(days=3)
-    dfh = dfh[dfh["ts"] >= cutoff]
-
+    # ========== (1) RIWAYAT PENCARIAN BERITA — hanya item yang DIKLIK ==========
+    st.header("📚 RIWAYAT PENCARIAN BERITA")
+    dfh = S.history.copy()
     if dfh.empty:
         st.info("Belum ada riwayat pencarian pada 3 hari terakhir.")
     else:
-        dfh["date"] = dfh["ts"].dt.strftime("%d %B %Y")
-        grouped = dfh.groupby("date")["query"].unique().to_dict()
-        for date in sorted(grouped.keys(), key=lambda x: datetime.strptime(x, "%d %B %Y"), reverse=True):
-            st.subheader(f"Tanggal {date}")
-            # >>>> PERBAIKAN #2: key unik untuk tiap expander <<<<
-            for q in sorted(set(grouped[date])):
-                exp_key = make_ui_key("exp.history", date, q)  # ← key unik
-                with st.expander(f"- {q}", expanded=True, key=exp_key):
-                    sub = dfh[(dfh["query"] == q) & (dfh["date"] == date)].copy()
-                    if sub.empty:
-                        st.info("❗ Belum ada artikel yang diklik untuk query ini.")
-                        continue
-                    for _, row in sub.iterrows():
-                        src = row.get("source") or get_source_from_url(row.get("url",""))
-                        st.markdown(f"**[{src}] {row.get('title','')}**")
-                        st.write(row.get("url",""))
-                        st.write(f"Waktu: {format_display_time(row.get('publishedAt',''))}")
+        cond_label = (dfh["label"] == 1) if "label" in dfh.columns else True
+        dfh = dfh[(dfh["user_id"] == USER_ID) & cond_label].copy()
+        dfh["ts"] = pd.to_datetime(dfh["click_time"], errors="coerce")
+        dfh = dfh.dropna(subset=["ts"])
+        # Normalisasi timezone ke WIB biar valid dibandingkan dengan cutoff yang aware
+        try:
+            if dfh["ts"].dt.tz is None:
+                dfh["ts"] = dfh["ts"].dt.tz_localize(TZ_JKT, nonexistent="NaT", ambiguous="NaT")
+            else:
+                dfh["ts"] = dfh["ts"].dt.tz_convert(TZ_JKT)
+        except Exception:
+            dfh["ts"] = pd.to_datetime(dfh["ts"], errors="coerce").dt.tz_localize(TZ_JKT, nonexistent="NaT", ambiguous="NaT")
 
-                        # ambil skor beku; jika kosong → backfill hitung ulang
-                        score = None
-                        for sc in ["clicked_final_score","clicked_sbert_score","final_score","sbert_score"]:
-                            if sc in row and pd.notna(row.get(sc)):
-                                score = float(row.get(sc))
-                                break
-                        if score is None:
-                            final_sc, sbert_sc = compute_score_for_history_item(
-                                q, row.get("title",""), "", "", clf
-                            )
-                            score = final_sc
-                            try:
-                                S.history.loc[(S.history["user_id"]==row["user_id"]) &
-                                              (S.history["url"]==row["url"]) &
-                                              (S.history["click_time"]==row["click_time"]), "clicked_final_score"] = final_sc
-                                S.history.loc[(S.history["user_id"]==row["user_id"]) &
-                                              (S.history["url"]==row["url"]) &
-                                              (S.history["click_time"]==row["click_time"]), "clicked_sbert_score"] = sbert_sc
-                            except Exception:
-                                pass
+        cutoff = datetime.now(TZ_JKT) - timedelta(days=3)
+        dfh = dfh[dfh["ts"] >= cutoff]
 
-                        render_score_badge(score)
-                        st.markdown("---")
+        if dfh.empty:
+            st.info("Belum ada riwayat pencarian pada 3 hari terakhir.")
+        else:
+            dfh["date"] = dfh["ts"].dt.strftime("%d %B %Y")
+            grouped = dfh.groupby("date")["query"].unique().to_dict()
+            for date in sorted(grouped.keys(), key=lambda x: datetime.strptime(x, "%d %B %Y"), reverse=True):
+                st.subheader(f"Tanggal {date}")
+                # >>> Perbaikan #2: key unik per expander
+                for q in sorted(set(grouped[date])):
+                    exp_key = make_ui_key("exp.history", date, q)
+                    with st.expander(f"- {q}", expanded=True, key=exp_key):
+                        sub = dfh[(dfh["query"] == q) & (dfh["date"] == date)].copy()
+                        if sub.empty:
+                            st.info("❗ Belum ada artikel yang diklik untuk query ini.")
+                            continue
+                        for _, row in sub.iterrows():
+                            src = row.get("source") or get_source_from_url(row.get("url",""))
+                            st.markdown(f"**[{src}] {row.get('title','')}**")
+                            st.write(row.get("url",""))
+                            st.write(f"Waktu: {format_display_time(row.get('publishedAt',''))}")
 
+                            # ambil skor beku; jika kosong → backfill hitung ulang
+                            score = None
+                            for sc in ["clicked_final_score","clicked_sbert_score","final_score","sbert_score"]:
+                                if sc in row and pd.notna(row.get(sc)):
+                                    score = float(row.get(sc))
+                                    break
+                            if score is None:
+                                final_sc, sbert_sc = compute_score_for_history_item(
+                                    q, row.get("title",""), "", "", clf
+                                )
+                                score = final_sc
+                                try:
+                                    S.history.loc[(S.history["user_id"]==row["user_id"]) &
+                                                  (S.history["url"]==row["url"]) &
+                                                  (S.history["click_time"]==row["click_time"]), "clicked_final_score"] = final_sc
+                                    S.history.loc[(S.history["user_id"]==row["user_id"]) &
+                                                  (S.history["url"]==row["url"]) &
+                                                  (S.history["click_time"]==row["click_time"]), "clicked_sbert_score"] = sbert_sc
+                                except Exception:
+                                    pass
+
+                            render_score_badge(score)
+                            st.markdown("---")
 
     st.markdown("---")
 
