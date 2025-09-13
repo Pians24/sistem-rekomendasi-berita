@@ -2315,5 +2315,17 @@
     "label": 1,
     "clicked_final_score": 0.6730152451933442,
     "clicked_sbert_score": 0.6649616360664368
+  },
+  {
+    "user_id": "user_01",
+    "query": "Prabowo",
+    "title": "Prabowo Mendarat di Bali Usai Kunker Qatar hingga Abu Dhabi",
+    "url": "https://news.detik.com/berita/d-8110058/prabowo-mendarat-di-bali-usai-kunker-qatar-hingga-abu-dhabi",
+    "source": "Detik",
+    "click_time": "Saturday, 13 September 2025 14:37",
+    "publishedAt": "2025-09-13 11:58",
+    "label": 1,
+    "clicked_final_score": 0.6335658703652821,
+    "clicked_sbert_score": 0.6267727613449097
   }
 ]
