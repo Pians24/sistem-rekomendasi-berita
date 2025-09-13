@@ -2339,5 +2339,17 @@
     "label": 1,
     "clicked_final_score": 0.8733341886760824,
     "clicked_sbert_score": 0.8999301791191101
+  },
+  {
+    "user_id": "user_01",
+    "query": "Ferry Irwandi",
+    "title": "TNI Klaim Temukan Indikasi Pidana Lain Buat Jerat Ferry Irwandi",
+    "url": "https://www.cnnindonesia.com/nasional/20250913142658-12-1273314/tni-klaim-temukan-indikasi-pidana-lain-buat-jerat-ferry-irwandi",
+    "source": "CNN",
+    "click_time": "Saturday, 13 September 2025 14:43",
+    "publishedAt": "2025-09-13 14:38",
+    "label": 1,
+    "clicked_final_score": 0.8605173276132263,
+    "clicked_sbert_score": 0.9040384888648987
   }
 ]
