@@ -2279,5 +2279,17 @@
     "label": 1,
     "clicked_final_score": 0.6905186398065761,
     "clicked_sbert_score": 0.6796170473098755
+  },
+  {
+    "user_id": "user_01",
+    "query": "Prabowo",
+    "title": "Potret Prabowo Menyapa Warga Terdampak Banjir di Pasar Kumbasari",
+    "url": "https://www.detik.com/bali/foto/d-8110220/potret-prabowo-menyapa-warga-terdampak-banjir-di-pasar-kumbasari",
+    "source": "Detik",
+    "click_time": "Saturday, 13 September 2025 14:33",
+    "publishedAt": "2025-09-13 14:16",
+    "label": 1,
+    "clicked_final_score": 0.788161769596438,
+    "clicked_sbert_score": 0.8442208766937256
   }
 ]
