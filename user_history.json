@@ -2291,5 +2291,17 @@
     "label": 1,
     "clicked_final_score": 0.788161769596438,
     "clicked_sbert_score": 0.8442208766937256
+  },
+  {
+    "user_id": "user_01",
+    "query": "Prabowo",
+    "title": "Warga Bali Curhat ke Prabowo Diselamatkan Anjing saat Banjir",
+    "url": "https://www.cnnindonesia.com/nasional/20250913140224-20-1273302/warga-bali-curhat-ke-prabowo-diselamatkan-anjing-saat-banjir",
+    "source": "CNN",
+    "click_time": "Saturday, 13 September 2025 14:34",
+    "publishedAt": "2025-09-13 14:15",
+    "label": 1,
+    "clicked_final_score": 0.5863269385474053,
+    "clicked_sbert_score": 0.5432462096214294
   }
 ]
