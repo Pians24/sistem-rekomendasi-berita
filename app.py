@@ -900,7 +900,7 @@ def main():
                 for q in sorted(set(grouped[date])):
                     # buat hidden suffix unik untuk mencegah duplikat key
                     hidden = make_ui_key("exp.history", date, q)
-                    label = f"- {q}\u200b{hidden}"  # \u200b = zero-width space (tak terlihat)
+                    label = f"- {q}\u200b" # \u200b = zero-width space (tak terlihat)
                     with st.expander(label, expanded=True):
                         sub = dfh[(dfh["query"] == q) & (dfh["date"] == date)].copy()
                         if sub.empty:
