@@ -2327,5 +2327,17 @@
     "label": 1,
     "clicked_final_score": 0.6335658703652821,
     "clicked_sbert_score": 0.6267727613449097
+  },
+  {
+    "user_id": "user_01",
+    "query": "Ferry Irwandi",
+    "title": "Herannya Ferry Irwandi Saat TNI Sebut Temukan Dugaan Pidana Lain",
+    "url": "https://news.detik.com/berita/d-8109871/herannya-ferry-irwandi-saat-tni-sebut-temukan-dugaan-pidana-lain",
+    "source": "Detik",
+    "click_time": "Saturday, 13 September 2025 14:40",
+    "publishedAt": "2025-09-13 08:46",
+    "label": 1,
+    "clicked_final_score": 0.8733341886760824,
+    "clicked_sbert_score": 0.8999301791191101
   }
 ]
