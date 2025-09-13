@@ -2255,5 +2255,17 @@
     "label": 1,
     "clicked_final_score": 0.9242519460601478,
     "clicked_sbert_score": 1.0
+  },
+  {
+    "user_id": "user_01",
+    "query": "Uya Kuya",
+    "title": "Uya Kuya dan Sherina Munaf Sepakat Damai Terkait Masalah Kucing",
+    "url": "https://www.cnnindonesia.com/nasional/20250913061144-12-1273191/uya-kuya-dan-sherina-munaf-sepakat-damai-terkait-masalah-kucing",
+    "source": "CNN",
+    "click_time": "Saturday, 13 September 2025 14:06",
+    "publishedAt": "2025-09-13 06:30",
+    "label": 1,
+    "clicked_final_score": 0.7227234538322329,
+    "clicked_sbert_score": 0.7167266607284546
   }
 ]
