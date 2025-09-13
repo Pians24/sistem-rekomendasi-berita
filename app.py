@@ -712,43 +712,90 @@ def train_model(df_train):
     st.sidebar.write(f"- Score F1: {f1_score(y_test, y_pred):.2f}")
     return clf
 
-def recommend(df, query, clf, n_per_source=3, min_score=0.55,
-              ensure_all_sources=False, use_lr_boost=True, alpha=0.25,
-              per_source_group=True):
-    if df.empty: return pd.DataFrame()
+def recommend(
+    df,
+    query,
+    clf,
+    n_per_source=3,
+    min_score=0.55,
+    ensure_all_sources=False,   # (belum dipakai; biarkan untuk kompatibilitas)
+    use_lr_boost=True,
+    alpha=0.25,
+    per_source_group=True
+):
+    """
+    Rekomendasi artikel:
+    - FIX: filter baris invalid (publishedAt) sebelum encoding agar vektor & df sinkron.
+    - Skor final = blend SBERT (similarity-normalized) + (opsional) LR + bonus kecil jika judul mengandung query.
+    """
+
+    # 0) Early exit
+    if df.empty:
+        return pd.DataFrame()
+
+    # 1) Unik per URL & siapkan teks untuk embedding
     df = df.copy().drop_duplicates(subset=["url"])
-    df["processed"] = df.apply(lambda r: preprocess_text(
-        f"{r.get('title','')} {r.get('description','')} {r.get('content','')}"
-    ), axis=1)
-    art_vecs = model_sbert.encode(df["processed"].tolist())
+    df["processed"] = df.apply(
+        lambda r: preprocess_text(
+            f"{r.get('title','')} {r.get('description','')} {r.get('content','')}"
+        ),
+        axis=1
+    )
+
+    # 2) NORMALISASI TANGGAL & FILTER lebih awal (FIX utama)
     df["publishedAt_dt"] = pd.to_datetime(df["publishedAt"], errors="coerce")
     df = df.dropna(subset=["publishedAt_dt"])
-    if df.empty: return pd.DataFrame()
+    if df.empty:
+        return pd.DataFrame()
+
+    # 3) ENCODE setelah df final agar sinkron
+    art_vecs = model_sbert.encode(df["processed"].tolist())
     q_vec = model_sbert.encode([preprocess_text(query)])
-    sims = cosine_similarity(q_vec, art_vecs[:len(df)])[0]
+
+    # 4) SBERT similarity (0..1) dengan min-max scaling per batch
+    sims = cosine_similarity(q_vec, art_vecs)[0]
     s_min, s_max = float(sims.min()), float(sims.max())
     sbert_score = (sims - s_min) / (s_max - s_min) if s_max > s_min else sims
     df["sbert_score"] = sbert_score
+
+    # 5) (Opsional) LR-boost + bonus judul mengandung query
     if clf is not None and use_lr_boost:
-        lr_score = clf.predict_proba(art_vecs[:len(df)])[:, 1]
-        bonus = df["title"].apply(lambda t: 0.05 if (t and query.lower() in t.lower()) else 0).values
+        lr_score = clf.predict_proba(art_vecs)[:, 1]
+        bonus = df["title"].apply(
+            lambda t: 0.05 if (t and query and query.lower() in t.lower()) else 0.0
+        ).values
         final = ((1 - alpha) * df["sbert_score"].values) + (alpha * lr_score) + bonus
     else:
         final = df["sbert_score"].values
-    df["final_score"] = final.clip(0, 1)
 
+    df["final_score"] = final.clip(0.0, 1.0)
+
+    # 6) Filter berdasarkan ambang skor (fallback: pakai semua kalau kosong)
     filtered = df[df["final_score"] >= min_score].copy()
-    if filtered.empty: filtered = df.copy()
+    if filtered.empty:
+        filtered = df.copy()
 
-    def _top_n(x):
-        return x.sort_values(["publishedAt_dt","final_score"], ascending=[False, False]).head(n_per_source)
+    # 7) Ambil top-N per sumber atau global, prioritaskan terbaru + skor tinggi
+    def _top_n(group):
+        return group.sort_values(
+            ["publishedAt_dt", "final_score"],
+            ascending=[False, False]
+        ).head(n_per_source)
 
     if per_source_group:
         got = filtered.groupby("source", group_keys=False).apply(_top_n)
     else:
-        got = filtered.sort_values(["publishedAt_dt","final_score"], ascending=[False, False]).head(3*n_per_source)
+        got = filtered.sort_values(
+            ["publishedAt_dt", "final_score"],
+            ascending=[False, False]
+        ).head(3 * n_per_source)
 
-    return got.sort_values(["publishedAt_dt","final_score"], ascending=[False, False]).reset_index(drop=True)
+    # 8) Urutan akhir yang konsisten
+    return got.sort_values(
+        ["publishedAt_dt", "final_score"],
+        ascending=[False, False]
+    ).reset_index(drop=True)
+
 
 # ============= SKOR ULANG (BACKFILL) UNTUK ENTRI LAMA TANPA SKOR =============
 def compute_score_for_history_item(query: str, title: str, description: str = "", content: str = "", clf=None):
