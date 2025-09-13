@@ -48,6 +48,16 @@ def make_ui_key(prefix: str, *parts) -> str:
     h = hashlib.blake2b(raw.encode("utf-8"), digest_size=8).hexdigest()
     return f"{prefix}:{h}"
 
+def zw_suffix(*parts: str) -> str:
+    """
+    Akhiran zero-width agar label unik tapi tidak terlihat di UI.
+    """
+    s = "|".join(parts)
+    h = hashlib.blake2b(s.encode("utf-8"), digest_size=4).digest()  # 32-bit cukup
+    bits = "".join(f"{b:08b}" for b in h)
+    # 0 -> zero-width space, 1 -> zero-width joiner
+    return "".join("\u200b" if bit == "0" else "\u200d" for bit in bits)
+
 # ======== SKOR CHIP ========
 def render_score_badge(score: float, label: str = "Skor"):
     try:
@@ -390,8 +400,8 @@ def scrape_cnn_fixed(query, max_results=12):
                     real, content, title_html = fetch_time_content_title(sess, link)
                     if real: pub = real
                     if not pub: continue
-                    if not title or len(title) < 3:
-                        title = title_html or slug_to_title(link)
+                    if not title atau len(title) < 3:
+                        title = title_html atau slug_to_title(link)
                     if not is_relevant_strict(query, title, summary, content, link): continue
                     results.append({
                         "source":"CNN","title":title,"description":summary,
@@ -481,7 +491,7 @@ def scrape_kompas_fixed(query, max_articles=12):
                 for e in feed.entries:
                     if len(data) >= max_articles: break
                     title = getattr(e,"title",""); link = getattr(e,"link",""); summary = getattr(e,"summary","")
-                    if not link or not _keywords_ok(title, summary, query):
+                    if not link atau not _keywords_ok(title, summary, query):
                         continue
                     pub = ""
                     if getattr(e,"published_parsed",None):
@@ -490,8 +500,8 @@ def scrape_kompas_fixed(query, max_articles=12):
                     real, content, title_html = fetch_time_content_title(sess, link)
                     if real: pub = real
                     if not pub: continue
-                    if not title or len(title) < 3:
-                        title = title_html or slug_to_title(link)
+                    if not title atau len(title) < 3:
+                        title = title_html atau slug_to_title(link)
                     if not is_relevant_strict(query, title, summary, content, link): continue
                     data.append({
                         "source":"Kompas","title":title,"description":summary,
@@ -724,15 +734,15 @@ def recommend(
     clf,
     n_per_source=3,
     min_score=0.55,
-    ensure_all_sources=False,
+    ensure_all_sources=False,   # disimpan untuk kompatibilitas
     use_lr_boost=True,
     alpha=0.25,
     per_source_group=True
 ):
     """
     Rekomendasi artikel:
-    - FIX: filter baris invalid (publishedAt) sebelum encoding agar vektor & df sinkron.
-    - Skor final = blend SBERT (similarity-normalized) + (opsional) LR + bonus kecil jika judul mengandung query.
+    - Filter baris invalid (publishedAt) sebelum encoding agar vektor & df sinkron.
+    - Skor final = blend SBERT (similarity-normalized) + (opsional) LR + bonus judul mengandung query.
     """
     if df.empty:
         return pd.DataFrame()
@@ -896,11 +906,9 @@ def main():
             grouped = dfh.groupby("date")["query"].unique().to_dict()
             for date in sorted(grouped.keys(), key=lambda x: datetime.strptime(x, "%d %B %Y"), reverse=True):
                 st.subheader(f"Tanggal {date}")
-                # >>> Perbaikan #2: key unik per expander
                 for q in sorted(set(grouped[date])):
-                    # buat hidden suffix unik untuk mencegah duplikat key
-                    hidden = make_ui_key("exp.history", date, q)
-                    label = f"- {q}\u200b" # \u200b = zero-width space (tak terlihat)
+                    # label tetap "- {q}" tapi unik (zero-width suffix tak terlihat)
+                    label = f"- {q}{zw_suffix(date, q)}"
                     with st.expander(label, expanded=True):
                         sub = dfh[(dfh["query"] == q) & (dfh["date"] == date)].copy()
                         if sub.empty:
@@ -916,8 +924,7 @@ def main():
                             score = None
                             for sc in ["clicked_final_score","clicked_sbert_score","final_score","sbert_score"]:
                                 if sc in row and pd.notna(row.get(sc)):
-                                    score = float(row.get(sc))
-                                    break
+                                    score = float(row.get(sc)); break
                             if score is None:
                                 final_sc, sbert_sc = compute_score_for_history_item(
                                     q, row.get("title",""), "", "", clf
