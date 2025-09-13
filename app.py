@@ -876,64 +876,66 @@ def main():
     else:
         st.sidebar.info("Model belum bisa dilatih karena riwayat tidak mencukupi.")
 
-    # ========== (1) RIWAYAT PENCARIAN BERITA — hanya item yang DIKLIK ==========
-    st.header("📚 RIWAYAT PENCARIAN BERITA")
-    dfh = S.history.copy()
+# ========== (1) RIWAYAT PENCARIAN BERITA — hanya item yang DIKLIK ==========
+st.header("📚 RIWAYAT PENCARIAN BERITA")
+dfh = S.history.copy()
+if dfh.empty:
+    st.info("Belum ada riwayat pencarian pada 3 hari terakhir.")
+else:
+    cond_label = (dfh["label"] == 1) if "label" in dfh.columns else True
+    dfh = dfh[(dfh["user_id"] == USER_ID) & cond_label].copy()
+    dfh["ts"] = pd.to_datetime(dfh["click_time"], errors="coerce")
+    dfh = dfh.dropna(subset=["ts"])
+
+    # (opsional, lebih konsisten zona waktu)
+    cutoff = datetime.now(TZ_JKT) - timedelta(days=3)
+    dfh = dfh[dfh["ts"] >= cutoff]
+
     if dfh.empty:
         st.info("Belum ada riwayat pencarian pada 3 hari terakhir.")
     else:
-        cond_label = (dfh["label"] == 1) if "label" in dfh.columns else True
-        dfh = dfh[(dfh["user_id"] == USER_ID) & cond_label].copy()
-        dfh["ts"] = pd.to_datetime(dfh["click_time"], errors="coerce")
-        dfh = dfh.dropna(subset=["ts"])
-        cutoff = datetime.now() - timedelta(days=3)
-        dfh = dfh[dfh["ts"] >= cutoff]
-        if dfh.empty:
-            st.info("Belum ada riwayat pencarian pada 3 hari terakhir.")
-        else:
-            dfh["date"] = dfh["ts"].dt.strftime("%d %B %Y")
-            grouped = dfh.groupby("date")["query"].unique().to_dict()
-            for date in sorted(grouped.keys(), key=lambda x: datetime.strptime(x, "%d %B %Y"), reverse=True):
-                st.subheader(f"Tanggal {date}")
-                # expander label bisa sama di tanggal berbeda; beri key unik
-                for q in sorted(set(grouped[date])):
-                    exp_key = make_ui_key("exp.history", date, q)   # key unik berbasis tanggal + query
-                    with st.expander(f"- {q}", expanded=True, key=exp_key):
-                        sub = dfh[(dfh["query"] == q) & (dfh["date"] == date)].copy()
-                        if sub.empty:
-                            st.info("❗ Belum ada artikel yang diklik untuk query ini.")
-                            continue
-                        for _, row in sub.iterrows():
-                            src = row.get("source") or get_source_from_url(row.get("url",""))
-                            st.markdown(f"**[{src}] {row.get('title','')}**")
-                            st.write(row.get("url",""))
-                            st.write(f"Waktu: {format_display_time(row.get('publishedAt',''))}")
+        dfh["date"] = dfh["ts"].dt.strftime("%d %B %Y")
+        grouped = dfh.groupby("date")["query"].unique().to_dict()
+        for date in sorted(grouped.keys(), key=lambda x: datetime.strptime(x, "%d %B %Y"), reverse=True):
+            st.subheader(f"Tanggal {date}")
+            # >>>> PERBAIKAN #2: key unik untuk tiap expander <<<<
+            for q in sorted(set(grouped[date])):
+                exp_key = make_ui_key("exp.history", date, q)  # ← key unik
+                with st.expander(f"- {q}", expanded=True, key=exp_key):
+                    sub = dfh[(dfh["query"] == q) & (dfh["date"] == date)].copy()
+                    if sub.empty:
+                        st.info("❗ Belum ada artikel yang diklik untuk query ini.")
+                        continue
+                    for _, row in sub.iterrows():
+                        src = row.get("source") or get_source_from_url(row.get("url",""))
+                        st.markdown(f"**[{src}] {row.get('title','')}**")
+                        st.write(row.get("url",""))
+                        st.write(f"Waktu: {format_display_time(row.get('publishedAt',''))}")
 
-                            # ambil skor beku; jika kosong → backfill hitung ulang
-                            score = None
-                            for sc in ["clicked_final_score","clicked_sbert_score","final_score","sbert_score"]:
-                                if sc in row and pd.notna(row.get(sc)):
-                                    score = float(row.get(sc))
-                                    break
-                            if score is None:
-                                # hitung ulang ringan dari judul saja (tanpa scraping)
-                                final_sc, sbert_sc = compute_score_for_history_item(
-                                    q, row.get("title",""), "", "", clf
-                                )
-                                score = final_sc
-                                # simpan ke S.history (in-memory)
-                                try:
-                                    S.history.loc[(S.history["user_id"]==row["user_id"]) &
-                                                  (S.history["url"]==row["url"]) &
-                                                  (S.history["click_time"]==row["click_time"]), "clicked_final_score"] = final_sc
-                                    S.history.loc[(S.history["user_id"]==row["user_id"]) &
-                                                  (S.history["url"]==row["url"]) &
-                                                  (S.history["click_time"]==row["click_time"]), "clicked_sbert_score"] = sbert_sc
-                                except Exception:
-                                    pass
+                        # ambil skor beku; jika kosong → backfill hitung ulang
+                        score = None
+                        for sc in ["clicked_final_score","clicked_sbert_score","final_score","sbert_score"]:
+                            if sc in row and pd.notna(row.get(sc)):
+                                score = float(row.get(sc))
+                                break
+                        if score is None:
+                            final_sc, sbert_sc = compute_score_for_history_item(
+                                q, row.get("title",""), "", "", clf
+                            )
+                            score = final_sc
+                            try:
+                                S.history.loc[(S.history["user_id"]==row["user_id"]) &
+                                              (S.history["url"]==row["url"]) &
+                                              (S.history["click_time"]==row["click_time"]), "clicked_final_score"] = final_sc
+                                S.history.loc[(S.history["user_id"]==row["user_id"]) &
+                                              (S.history["url"]==row["url"]) &
+                                              (S.history["click_time"]==row["click_time"]), "clicked_sbert_score"] = sbert_sc
+                            except Exception:
+                                pass
 
-                            render_score_badge(score)
-                            st.markdown("---")
+                        render_score_badge(score)
+                        st.markdown("---")
+
 
     st.markdown("---")
 
