@@ -2303,5 +2303,17 @@
     "label": 1,
     "clicked_final_score": 0.5863269385474053,
     "clicked_sbert_score": 0.5432462096214294
+  },
+  {
+    "user_id": "user_01",
+    "query": "Prabowo",
+    "title": "Prabowo ke Bali, Kunjungi Rumah Warga Korban Banjir",
+    "url": "https://www.cnnindonesia.com/nasional/20250903123110-20-1269620/prabowo-ke-bali-kunjungi-rumah-warga-korban-banjir",
+    "source": "CNN",
+    "click_time": "Saturday, 13 September 2025 14:35",
+    "publishedAt": "2025-09-13 13:31",
+    "label": 1,
+    "clicked_final_score": 0.6730152451933442,
+    "clicked_sbert_score": 0.6649616360664368
   }
 ]
