@@ -14,6 +14,8 @@ from sentence_transformers import SentenceTransformer
 from github import Github
 from github.GithubException import GithubException
 import streamlit.components.v1 as components
+from email.utils import parsedate_to_datetime   # <<< tambahan
+import calendar                                 # <<< tambahan
 
 # ========================= KONFIG & STATE =========================
 st.set_page_config(page_title="Sistem Rekomendasi Berita", layout="wide")
@@ -49,13 +51,10 @@ def make_ui_key(prefix: str, *parts) -> str:
     return f"{prefix}:{h}"
 
 def zw_suffix(*parts: str) -> str:
-    """
-    Akhiran zero-width agar label unik tapi tidak terlihat di UI.
-    """
+    """Akhiran zero-width agar label unik tapi tak terlihat di UI."""
     s = "|".join(parts)
-    h = hashlib.blake2b(s.encode("utf-8"), digest_size=4).digest()  # 32-bit cukup
+    h = hashlib.blake2b(s.encode("utf-8"), digest_size=4).digest()
     bits = "".join(f"{b:08b}" for b in h)
-    # 0 -> zero-width space, 1 -> zero-width joiner
     return "".join("\u200b" if bit == "0" else "\u200d" for bit in bits)
 
 # ======== SKOR CHIP ========
@@ -232,7 +231,32 @@ def _parse_id_date_text(text):
         return dt.strftime("%Y-%m-%d %H:%M")
     return ""
 
-# !!! HAPUS cache di fungsi yang menerima BeautifulSoup (lebih aman)
+# --- Konversi waktu RSS -> WIB (hindari double offset, khususnya Detik) ---
+def _rss_to_wib(entry):
+    """
+    Convert waktu dari entry RSS ke WIB tanpa double offset.
+    - Utama: pakai entry.published (string RFC2822, mis. 'Sat, 13 Sep 2025 10:40:00 +0700')
+    - Fallback: published_parsed/updated_parsed (struct_time, diperlakukan UTC)
+    """
+    raw = getattr(entry, "published", None) or getattr(entry, "updated", None)
+    if raw:
+        try:
+            dt = parsedate_to_datetime(raw)  # aware jika ada +0700
+            if dt.tzinfo is None:
+                dt = pytz.UTC.localize(dt)
+            return dt.astimezone(TZ_JKT).strftime("%Y-%m-%d %H:%M")
+        except Exception:
+            pass
+    pp = getattr(entry, "published_parsed", None) or getattr(entry, "updated_parsed", None)
+    if pp:
+        try:
+            ts_utc = calendar.timegm(pp)  # struct_time -> epoch UTC
+            return datetime.fromtimestamp(ts_utc, tz=pytz.UTC).astimezone(TZ_JKT).strftime("%Y-%m-%d %H:%M")
+        except Exception:
+            pass
+    return ""
+
+# !!! JANGAN cache fungsi yang menerima BeautifulSoup (object tak hashable)
 def extract_published_at_from_article_html(art_soup, url=""):
     try:
         for s in art_soup.find_all("script", attrs={"type":"application/ld+json"}):
@@ -356,10 +380,11 @@ def scrape_detik(query, max_articles=15):
                     title = getattr(e,"title",""); link = getattr(e,"link",""); summary = getattr(e,"summary","")
                     if not link or not _keywords_ok(title, summary, query):
                         continue
-                    pub = ""
-                    if getattr(e,"published_parsed",None):
-                        utc_dt = datetime(*e.published_parsed[:6], tzinfo=pytz.UTC)
-                        pub = utc_dt.astimezone(TZ_JKT).strftime("%Y-%m-%d %H:%M")
+
+                    # >>> Perbaikan waktu RSS Detik (hindari double offset)
+                    pub = _rss_to_wib(e)
+
+                    # Ambil waktu yang lebih akurat dari halaman, kalau ada
                     real, content, title_html = fetch_time_content_title(sess, link)
                     if real: pub = real
                     if not pub: continue
@@ -643,7 +668,6 @@ def get_recent_queries_by_days(user_id, df, days=3):
     d = d.drop_duplicates(subset=["user_id","query","click_time"])
     d["ts"] = pd.to_datetime(d["click_time"], errors="coerce")
     d = d.dropna(subset=["ts"])
-    # Normalisasi ke Asia/Jakarta
     try:
         if d["ts"].dt.tz is None:
             d["ts"] = d["ts"].dt.tz_localize(TZ_JKT, nonexistent="NaT", ambiguous="NaT")
@@ -651,7 +675,6 @@ def get_recent_queries_by_days(user_id, df, days=3):
             d["ts"] = d["ts"].dt.tz_convert(TZ_JKT)
     except Exception:
         d["ts"] = pd.to_datetime(d["ts"], errors="coerce").dt.tz_localize(TZ_JKT, nonexistent="NaT", ambiguous="NaT")
-
     cutoff = datetime.now(TZ_JKT) - timedelta(days=days)
     d = d[d["ts"] >= cutoff]
     if d.empty: return {}
@@ -668,7 +691,6 @@ def trending_by_query_frequency(user_id, df, days=3):
     d = d.drop_duplicates(subset=["user_id","query","click_time"])
     d["ts"] = pd.to_datetime(d["click_time"], errors="coerce")
     d = d.dropna(subset=["ts"])
-    # Normalisasi ke Asia/Jakarta
     try:
         if d["ts"].dt.tz is None:
             d["ts"] = d["ts"].dt.tz_localize(TZ_JKT, nonexistent="NaT", ambiguous="NaT")
@@ -676,7 +698,6 @@ def trending_by_query_frequency(user_id, df, days=3):
             d["ts"] = d["ts"].dt.tz_convert(TZ_JKT)
     except Exception:
         d["ts"] = pd.to_datetime(d["ts"], errors="coerce").dt.tz_localize(TZ_JKT, nonexistent="NaT", ambiguous="NaT")
-
     cutoff = datetime.now(TZ_JKT) - timedelta(days=days)
     d = d[d["ts"] >= cutoff]
     if d.empty:
@@ -739,11 +760,7 @@ def recommend(
     alpha=0.25,
     per_source_group=True
 ):
-    """
-    Rekomendasi artikel:
-    - Filter baris invalid (publishedAt) sebelum encoding agar vektor & df sinkron.
-    - Skor final = blend SBERT (similarity-normalized) + (opsional) LR + bonus judul mengandung query.
-    """
+    """Rekomendasi artikel dengan filter tanggal sebelum embedding + blend skor."""
     if df.empty:
         return pd.DataFrame()
 
@@ -752,14 +769,11 @@ def recommend(
         lambda r: preprocess_text(f"{r.get('title','')} {r.get('description','')} {r.get('content','')}"),
         axis=1
     )
-
-    # Filter tanggal lebih awal (FIX utama)
     df["publishedAt_dt"] = pd.to_datetime(df["publishedAt"], errors="coerce")
     df = df.dropna(subset=["publishedAt_dt"])
     if df.empty:
         return pd.DataFrame()
 
-    # Encode setelah DF final → sinkron
     art_vecs = model_sbert.encode(df["processed"].tolist())
     q_vec = model_sbert.encode([preprocess_text(query)])
 
@@ -798,8 +812,8 @@ def compute_score_for_history_item(query: str, title: str, description: str = ""
         return 0.0, 0.0
     qv = model_sbert.encode([preprocess_text(query)])
     tv = model_sbert.encode([txt])
-    sim = float(cosine_similarity(qv, tv)[0][0])  # -1..1
-    sbert = (sim + 1.0) / 2.0                     # 0..1
+    sim = float(cosine_similarity(qv, tv)[0][0])
+    sbert = (sim + 1.0) / 2.0
     if clf is not None:
         lr_score = float(clf.predict_proba(tv)[0, 1])
         final = ((1 - ALPHA) * sbert) + (ALPHA * lr_score)
@@ -840,7 +854,6 @@ def render_read_button(url: str, query: str, row_dict: dict, label: str = "Baca 
         except Exception as e:
             st.warning(f"Gagal menyimpan history: {e}")
 
-# >>> Sanitasi URL
 def safe_href(u: str) -> str | None:
     if not u: return None
     if u.startswith("//"): u = "https:" + u
@@ -887,7 +900,7 @@ def main():
         dfh = dfh[(dfh["user_id"] == USER_ID) & cond_label].copy()
         dfh["ts"] = pd.to_datetime(dfh["click_time"], errors="coerce")
         dfh = dfh.dropna(subset=["ts"])
-        # Normalisasi timezone ke WIB biar valid dibandingkan dengan cutoff yang aware
+        # Normalisasi timezone ke WIB biar valid dibanding cutoff yang aware
         try:
             if dfh["ts"].dt.tz is None:
                 dfh["ts"] = dfh["ts"].dt.tz_localize(TZ_JKT, nonexistent="NaT", ambiguous="NaT")
@@ -907,8 +920,7 @@ def main():
             for date in sorted(grouped.keys(), key=lambda x: datetime.strptime(x, "%d %B %Y"), reverse=True):
                 st.subheader(f"Tanggal {date}")
                 for q in sorted(set(grouped[date])):
-                    # label tetap "- {q}" tapi unik (zero-width suffix tak terlihat)
-                    label = f"- {q}{zw_suffix(date, q)}"
+                    label = f"- {q}{zw_suffix(date, q)}"  # unik, tak terlihat
                     with st.expander(label, expanded=True):
                         sub = dfh[(dfh["query"] == q) & (dfh["date"] == date)].copy()
                         if sub.empty:
@@ -920,7 +932,6 @@ def main():
                             st.write(row.get("url",""))
                             st.write(f"Waktu: {format_display_time(row.get('publishedAt',''))}")
 
-                            # ambil skor beku; jika kosong → backfill hitung ulang
                             score = None
                             for sc in ["clicked_final_score","clicked_sbert_score","final_score","sbert_score"]:
                                 if sc in row and pd.notna(row.get(sc)):
