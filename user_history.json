@@ -2267,5 +2267,17 @@
     "label": 1,
     "clicked_final_score": 0.7227234538322329,
     "clicked_sbert_score": 0.7167266607284546
+  },
+  {
+    "user_id": "user_01",
+    "query": "Uya Kuya",
+    "title": "Video Sherina Munaf Sepakat Kembalikan Kucing Uya Kuya",
+    "url": "https://20.detik.com/detikupdate/20250912-250912133/video-sherina-munaf-sepakat-kembalikan-kucing-uya-kuya",
+    "source": "Detik",
+    "click_time": "Saturday, 13 September 2025 14:07",
+    "publishedAt": "2025-09-13 06:14",
+    "label": 1,
+    "clicked_final_score": 0.6905186398065761,
+    "clicked_sbert_score": 0.6796170473098755
   }
 ]
