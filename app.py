@@ -898,8 +898,9 @@ def main():
                 st.subheader(f"Tanggal {date}")
                 # >>> Perbaikan #2: key unik per expander
                 for q in sorted(set(grouped[date])):
-                    exp_key = make_ui_key("exp.history", date, q)
-                    with st.expander(f"- {q}", expanded=True, key=exp_key):
+                    # label dibuat unik dengan menyertakan tanggal
+                    label = f"{date} — {q}"
+                    with st.expander(label, expanded=True):
                         sub = dfh[(dfh["query"] == q) & (dfh["date"] == date)].copy()
                         if sub.empty:
                             st.info("❗ Belum ada artikel yang diklik untuk query ini.")
