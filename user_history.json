@@ -2399,5 +2399,17 @@
     "label": 1,
     "clicked_final_score": 0.8370392542400182,
     "clicked_sbert_score": 0.8421817421913147
+  },
+  {
+    "user_id": "user_01",
+    "query": "Purbaya",
+    "title": "Video Terpopuler Sepekan: Sri Mulyani Diganti Purbaya hingga Banjir Bandang Bali",
+    "url": "https://20.detik.com/detikupdate/20250914-250914077/video-terpopuler-sepekan-sri-mulyani-diganti-purbaya-hingga-banjir-bandang-bali",
+    "source": "Detik",
+    "click_time": "Sunday, 14 September 2025 18:01",
+    "publishedAt": "2025-09-14 13:38",
+    "label": 1,
+    "clicked_final_score": 0.5965539455088877,
+    "clicked_sbert_score": 0.567082405090332
   }
 ]
