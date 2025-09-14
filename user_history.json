@@ -2351,5 +2351,17 @@
     "label": 1,
     "clicked_final_score": 0.8605173276132263,
     "clicked_sbert_score": 0.9040384888648987
+  },
+  {
+    "user_id": "user_01",
+    "query": "Kecelakaan Bus",
+    "title": "Kecelakaan Bus Pariwisata yang Angkut Nakes di Probolinggo Diduga karena Rem Blong",
+    "url": "https://www.kompas.com/jawa-timur/read/2025/09/14/165158888/kecelakaan-bus-pariwisata-yang-angkut-nakes-di-probolinggo-diduga",
+    "source": "Kompas",
+    "click_time": "Sunday, 14 September 2025 17:49",
+    "publishedAt": "2025-09-14 16:51",
+    "label": 1,
+    "clicked_final_score": 0.7341791562139683,
+    "clicked_sbert_score": 0.7642765641212463
   }
 ]
