@@ -2363,5 +2363,17 @@
     "label": 1,
     "clicked_final_score": 0.7341791562139683,
     "clicked_sbert_score": 0.7642765641212463
+  },
+  {
+    "user_id": "user_01",
+    "query": "Ferry Irwandi",
+    "title": "Video: TNI dan Ferry Irwandi Saling Maaf, Ini Isi Komunikasinya",
+    "url": "https://20.detik.com/detikupdate/20250914-250914092/video-tni-dan-ferry-irwandi-saling-maaf-ini-isi-komunikasinya",
+    "source": "Detik",
+    "click_time": "Sunday, 14 September 2025 17:54",
+    "publishedAt": "2025-09-14 16:56",
+    "label": 1,
+    "clicked_final_score": 0.6403290226988135,
+    "clicked_sbert_score": 0.5972181558609009
   }
 ]
