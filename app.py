@@ -546,39 +546,79 @@ def scrape_all_sources(query):
     if not d3.empty: dfs.append(d3)
     return pd.concat(dfs, ignore_index=True) if dfs else pd.DataFrame()
 
-# ========================= GITHUB HISTORY =========================
+# ========================= GITHUB HISTORY (robust) =========================
+import os
+
 @st.cache_resource(ttl=60)
 def get_github_client():
-    return Github(st.secrets["github_token"])
+    """Aman: tidak bikin app crash kalau secrets belum ada/invalid."""
+    token = st.secrets.get("github_token") or os.getenv("GITHUB_TOKEN")
+    if not token:
+        st.info("⚠️ github_token belum disetel. Fitur riwayat GitHub dimatikan.")
+        return None
+    try:
+        return Github(token)
+    except Exception as e:
+        st.warning(f"Gagal inisialisasi GitHub: {e}")
+        return None
+
+def _get_repo_and_path(gh: Github):
+    owner = st.secrets.get("repo_owner")
+    name  = st.secrets.get("repo_name")
+    path  = st.secrets.get("file_path", "user_history.json")
+    if not owner or not name:
+        raise RuntimeError("repo_owner/repo_name belum disetel di Secrets.")
+    repo = gh.get_user(owner).get_repo(name)
+    return repo, path
 
 @st.cache_data(ttl=60)
 def load_history_from_github():
-    try:
-        g = get_github_client()
-        repo = g.get_user(st.secrets["repo_owner"]).get_repo(st.secrets["repo_name"])
-        contents = repo.get_contents(st.secrets["file_path"])
-        data = json.loads(contents.decoded_content.decode("utf-8"))
-        if data:
-            df = pd.DataFrame(data)
-            for col in ["user_id","query","click_time","publishedAt","label","title","url","source","clicked_final_score","clicked_sbert_score","final_score","sbert_score"]:
-                if col not in df.columns: df[col] = None
-            for sc in ["clicked_final_score","clicked_sbert_score","final_score","sbert_score"]:
-                df[sc] = pd.to_numeric(df[sc], errors="coerce")
-            return df
+    gh = get_github_client()
+    if gh is None:
         return pd.DataFrame()
+    try:
+        repo, path = _get_repo_and_path(gh)
+        try:
+            contents = repo.get_contents(path)
+            data = json.loads(contents.decoded_content.decode("utf-8") or "[]")
+        except GithubException as ge:
+            if ge.status == 404:
+                repo.create_file(path, "init history", "[]")
+                data = []
+            else:
+                raise
+        if not data:
+            return pd.DataFrame()
+        df = pd.DataFrame(data)
+        for col in ["user_id","query","click_time","publishedAt","label","title","url","source","clicked_final_score","clicked_sbert_score","final_score","sbert_score"]:
+            if col not in df.columns: df[col] = None
+        for sc in ["clicked_final_score","clicked_sbert_score","final_score","sbert_score"]:
+            df[sc] = pd.to_numeric(df[sc], errors="coerce")
+        return df
     except Exception as e:
-        st.error(f"Gagal memuat riwayat dari GitHub: {e}")
+        st.warning(f"Gagal memuat riwayat dari GitHub: {e}")
         return pd.DataFrame()
 
 def save_interaction_to_github(user_id, query, all_articles, clicked_urls):
-    g = get_github_client()
-    repo = g.get_user(st.secrets["repo_owner"]).get_repo(st.secrets["repo_name"])
+    gh = get_github_client()
+    if gh is None: 
+        return
+    repo, path = _get_repo_and_path(gh)
+    contents = None
     try:
-        contents = repo.get_contents(st.secrets["file_path"])
-        history_str = contents.decoded_content.decode("utf-8")
-        history_list = json.loads(history_str)
-    except Exception:
-        history_list = []
+        contents = repo.get_contents(path)
+        history_list = json.loads(contents.decoded_content.decode("utf-8") or "[]")
+    except GithubException as ge:
+        if ge.status == 404:
+            history_list = []
+            contents = None
+        else:
+            st.warning(f"Gagal membaca riwayat (GitHub): {ge.status}")
+            return
+    except Exception as e:
+        st.warning(f"Gagal membaca riwayat: {e}")
+        return
+
     now = datetime.now(TZ_JKT).strftime("%A, %d %B %Y %H:%M")
     for _, row in all_articles.iterrows():
         history_list.append({
@@ -592,10 +632,29 @@ def save_interaction_to_github(user_id, query, all_articles, clicked_urls):
             "publishedAt": row.get("publishedAt",""),
             "label": 1 if row.get("url","") in clicked_urls else 0
         })
-    updated = json.dumps(history_list, indent=2, ensure_ascii=False)
-    repo.update_file(st.secrets["file_path"], f"Update history for {query}", updated, contents.sha)
+
+    payload = json.dumps(history_list, indent=2, ensure_ascii=False)
+    try:
+        if contents is None:
+            repo.create_file(path, f"Create history for {query}", payload)
+        else:
+            repo.update_file(path, f"Update history for {query}", payload, contents.sha)
+    except GithubException as ge:
+        if ge.status == 409:
+            # konflik SHA → ambil ulang dan retry
+            contents = repo.get_contents(path)
+            repo.update_file(path, f"Update history (retry) for {query}", payload, contents.sha)
+        else:
+            st.warning(f"Gagal menyimpan riwayat (GitHub): {ge.status}")
+    except Exception as e:
+        st.warning(f"Gagal menyimpan riwayat: {e}")
 
 def save_single_click_to_github(user_id: str, query: str, row_like):
+    gh = get_github_client()
+    if gh is None:
+        return
+    repo, path = _get_repo_and_path(gh)
+
     row = dict(row_like)
     now = datetime.now(TZ_JKT).strftime("%A, %d %B %Y %H:%M")
     entry = {
@@ -610,20 +669,24 @@ def save_single_click_to_github(user_id: str, query: str, row_like):
         "clicked_final_score": float(row.get("final_score", row.get("sbert_score", 0.0)) or 0.0),
         "clicked_sbert_score": float(row.get("sbert_score", 0.0) or 0.0),
     }
-    g = get_github_client()
-    repo = g.get_user(st.secrets["repo_owner"]).get_repo(st.secrets["repo_name"])
-    path = st.secrets["file_path"]
 
+    contents = None
     try:
         contents = repo.get_contents(path)
-        history = json.loads(contents.decoded_content.decode("utf-8"))
-    except Exception:
-        contents = None
-        history = []
+        history = json.loads(contents.decoded_content.decode("utf-8") or "[]")
+    except GithubException as ge:
+        if ge.status == 404:
+            history = []
+            contents = None
+        else:
+            st.warning(f"Gagal membaca klik (GitHub): {ge.status}")
+            return
+    except Exception as e:
+        st.warning(f"Gagal membaca klik: {e}")
+        return
 
     history.append(entry)
     payload = json.dumps(history, indent=2, ensure_ascii=False)
-
     try:
         if contents is None:
             repo.create_file(path, f"Create history for first click: {query}", payload)
@@ -634,7 +697,9 @@ def save_single_click_to_github(user_id: str, query: str, row_like):
             contents = repo.get_contents(path)
             repo.update_file(path, f"Append click (retry) for {query}", payload, contents.sha)
         else:
-            raise
+            st.warning(f"Gagal menyimpan klik (GitHub): {ge.status}")
+    except Exception as e:
+        st.warning(f"Gagal menyimpan klik: {e}")
 
 def append_click_local(user_id: str, query: str, row_like):
     row = dict(row_like)
@@ -755,7 +820,7 @@ def recommend(
     clf,
     n_per_source=3,
     min_score=0.55,
-    ensure_all_sources=False,   # disimpan untuk kompatibilitas
+    ensure_all_sources=False,
     use_lr_boost=True,
     alpha=0.25,
     per_source_group=True
@@ -1035,4 +1100,8 @@ def main():
             st.caption(f"Klik tercatat (lokal): {clicked_cnt} dari {total_cnt}. Setiap klik disimpan otomatis ke Riwayat.")
 
 if __name__ == "__main__":
-    main()
+    try:
+        main()
+    except Exception as e:
+        # tampilkan traceback di UI agar tidak blank "Oh no"
+        st.exception(e)
