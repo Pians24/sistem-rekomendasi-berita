@@ -2375,5 +2375,17 @@
     "label": 1,
     "clicked_final_score": 0.6403290226988135,
     "clicked_sbert_score": 0.5972181558609009
+  },
+  {
+    "user_id": "user_01",
+    "query": "Ferry Irwandi",
+    "title": "Pilih Damai, TNI Batal Proses Hukum Ferry Irwandi",
+    "url": "https://www.cnnindonesia.com/nasional/20250914125704-12-1273524/pilih-damai-tni-batal-proses-hukum-ferry-irwandi",
+    "source": "CNN",
+    "click_time": "Sunday, 14 September 2025 17:54",
+    "publishedAt": "2025-09-14 13:05",
+    "label": 1,
+    "clicked_final_score": 0.7036731903202292,
+    "clicked_sbert_score": 0.683535099029541
   }
 ]
