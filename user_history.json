@@ -2435,5 +2435,17 @@
     "label": 1,
     "clicked_final_score": 0.5674047457222798,
     "clicked_sbert_score": 0.4977867603302002
+  },
+  {
+    "user_id": "user_01",
+    "query": "kecelakaan bromo",
+    "title": "Paralayang Ilegal, Gubernur Jatim: Bromo Harus Dijaga Nilai Sakralnya",
+    "url": "https://travel.detik.com/travel-news/d-8112144/paralayang-ilegal-gubernur-jatim-bromo-harus-dijaga-nilai-sakralnya",
+    "source": "Detik",
+    "click_time": "Monday, 15 September 2025 10:29",
+    "publishedAt": "2025-09-15 08:45",
+    "label": 1,
+    "clicked_final_score": 0.6477555060197475,
+    "clicked_sbert_score": 0.696763813495636
   }
 ]
