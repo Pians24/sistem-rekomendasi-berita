@@ -2423,5 +2423,17 @@
     "label": 1,
     "clicked_final_score": 0.6161185756244495,
     "clicked_sbert_score": 0.580935537815094
+  },
+  {
+    "user_id": "user_01",
+    "query": "ferry irwandi",
+    "title": "TNI Benarkan Sudah Telepon Ferry Irwandi dan Saling Bermaafan",
+    "url": "https://nasional.kompas.com/read/2025/09/13/21401821/tni-benarkan-sudah-telepon-ferry-irwandi-dan-saling-bermaafan",
+    "source": "Kompas",
+    "click_time": "Monday, 15 September 2025 10:13",
+    "publishedAt": "2025-09-13 21:40",
+    "label": 1,
+    "clicked_final_score": 0.5674047457222798,
+    "clicked_sbert_score": 0.4977867603302002
   }
 ]
