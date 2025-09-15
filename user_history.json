@@ -2447,5 +2447,17 @@
     "label": 1,
     "clicked_final_score": 0.6477555060197475,
     "clicked_sbert_score": 0.696763813495636
+  },
+  {
+    "user_id": "user_01",
+    "query": "kecelakaan bromo",
+    "title": "Uji KIR Bus Maut di Jalur Bromo Masih Berlaku, Kok Bisa Rem Blong?",
+    "url": "https://oto.detik.com/berita/d-8112263/uji-kir-bus-maut-di-jalur-bromo-masih-berlaku-kok-bisa-rem-blong",
+    "source": "Detik",
+    "click_time": "Monday, 15 September 2025 10:32",
+    "publishedAt": "2025-09-15 10:11",
+    "label": 1,
+    "clicked_final_score": 0.5775135775405168,
+    "clicked_sbert_score": 0.6112720966339111
   }
 ]
