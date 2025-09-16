@@ -2459,5 +2459,17 @@
     "label": 1,
     "clicked_final_score": 0.5775135775405168,
     "clicked_sbert_score": 0.6112720966339111
+  },
+  {
+    "user_id": "user_01",
+    "query": "Purbaya",
+    "title": "Gebrakan Purbaya, Anomali Rp 71 Triliun, dan Masa Depan MBG",
+    "url": "https://money.kompas.com/read/2025/09/16/091214326/gebrakan-purbaya-anomali-rp-71-triliun-dan-masa-depan-mbg",
+    "source": "Kompas",
+    "click_time": "Tuesday, 16 September 2025 10:54",
+    "publishedAt": "2025-09-16 09:12",
+    "label": 1,
+    "clicked_final_score": 0.6159972582451027,
+    "clicked_sbert_score": 0.5885772705078125
   }
 ]
