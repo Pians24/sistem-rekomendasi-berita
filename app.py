@@ -539,7 +539,7 @@ def scrape_kompas_fixed(query, max_articles=12):
 
 @st.cache_data(ttl=300)
 def scrape_all_sources(query, cache_bust: int | None = None):
-    # 'cache_bust' tidak dipakai, cukup ada agar kunci cache berubah
+    # 'cache_bust' hanya untuk mengubah signature cache agar fetch baru; tidak dipakai di body.
     dfs = []
     d1 = scrape_detik(query);  d2 = scrape_cnn_fixed(query); d3 = scrape_kompas_fixed(query)
     if not d1.empty: dfs.append(d1)
@@ -872,24 +872,36 @@ def recommend(
 
     return got.sort_values(["publishedAt_dt", "final_score"], ascending=[False, False]).reset_index(drop=True)
 
-# ---- Helper: hanya berita tanggal hari ini (WIB) ----
+# ---- Helper: strict filter hanya artikel bertanggal "hari ini" WIB ----
 def filter_today_only(df: pd.DataFrame) -> pd.DataFrame:
     if df is None or df.empty:
         return pd.DataFrame()
     df = df.copy()
-    # 1) via datetime
+    # parse ke datetime (naive oke karena string sudah di-WIB-kan sebelumnya)
     df["publishedAt_dt"] = pd.to_datetime(df["publishedAt"], errors="coerce")
     today = datetime.now(TZ_JKT).date()
-    m_dt = df["publishedAt_dt"].dt.date == today
-
-    # 2) via string prefix YYYY-MM-DD (buat jaga-jaga parsing gagal)
+    # 1) via datetime
+    m_dt = df["publishedAt_dt"].dt.date.eq(today)
+    # 2) via string prefix YYYY-MM-DD untuk jaga-jaga parsing gagal
     today_str = datetime.now(TZ_JKT).strftime("%Y-%m-%d")
     m_str = df["publishedAt"].astype(str).str.startswith(today_str, na=False)
-
-    # gabungkan (kalau salah satu true, lolos)
-    mask = m_dt.fillna(False) | m_str.fillna(False)
+    mask = (m_dt.fillna(False) | m_str.fillna(False))
     return df[mask].copy()
 
+# ---- Helper: cek per-baris saat render (lapis ke-3) ----
+def is_today_row(row) -> bool:
+    today = datetime.now(TZ_JKT).date()
+    # cek kolom dt kalau ada
+    try:
+        dt = pd.to_datetime(row.get("publishedAt"), errors="coerce")
+        if pd.notna(dt) and dt.date() == today:
+            return True
+    except Exception:
+        pass
+    # cek string prefix
+    today_str = datetime.now(TZ_JKT).strftime("%Y-%m-%d")
+    return str(row.get("publishedAt", "")).startswith(today_str)
+)
 
 # ============= SKOR ULANG (BACKFILL) UNTUK ENTRI LAMA TANPA SKOR =============
 def compute_score_for_history_item(query: str, title: str, description: str = "", content: str = "", clf=None):
@@ -1049,13 +1061,23 @@ trends = trending_by_query_frequency(USER_ID, S.history, days=3)
 if trends:
     q_top, _ = trends[0]
     with st.spinner("Mencari berita..."):
-        df_news = scrape_all_sources(q_top, cache_bust=int(time.time() // 120))  # <- paksa fresh
+        # cache_bust setiap 2 menit agar tidak pakai cache lama yang nyelip tanggal non-hari-ini
+        df_news = scrape_all_sources(q_top, cache_bust=int(time.time() // 120))
 
     if df_news.empty:
         st.info("❗ Tidak ditemukan berita.")
     else:
-        # PRE-FILTER: hanya hari ini
+        # Lapis 1 — PRE-FILTER: buang semua yang bukan tanggal hari ini sebelum rekomendasi
         df_news = filter_today_only(df_news)
+
+        # (Opsional) Debug ringkas: distribusi tanggal sumber mentah
+        with st.expander("🔧 Debug tanggal (sumber sebelum rekomendasi)", expanded=False):
+            if df_news.empty:
+                st.write("Kosong setelah pre-filter (hari ini).")
+            else:
+                tmp = df_news.copy()
+                tmp["date_only"] = pd.to_datetime(tmp["publishedAt"], errors="coerce").dt.date
+                st.write(tmp["date_only"].value_counts(dropna=False).sort_index())
 
         if df_news.empty:
             st.info("❗ Tidak ada berita bertanggal hari ini untuk topik ini.")
@@ -1068,7 +1090,7 @@ if trends:
                 per_source_group=PER_SOURCE_GROUP,
             )
 
-            # POST-FILTER: jaga-jaga
+            # Lapis 2 — POST-FILTER: jaga-jaga setelah rekomendasi
             results = filter_today_only(results)
 
             S.trending_results_df = results.copy()
@@ -1077,7 +1099,16 @@ if trends:
             if results.empty:
                 st.info("❗ Tidak ada berita bertanggal hari ini untuk topik ini.")
             else:
+                # (Opsional) Debug ringkas: distribusi tanggal hasil rekomendasi
+                with st.expander("🔧 Debug tanggal (hasil rekomendasi)", expanded=False):
+                    t2 = results.copy()
+                    t2["date_only"] = pd.to_datetime(t2["publishedAt"], errors="coerce").dt.date
+                    st.write(t2["date_only"].value_counts(dropna=False).sort_index())
+
                 for _, row in results.iterrows():
+                    # Lapis 3 — FILTER SAAT RENDER (baris yang bukan hari ini diskip total)
+                    if not is_today_row(row):
+                        continue
                     src = get_source_from_url(row["url"])
                     st.markdown(f"**[{src}] {row['title']}**")
                     st.write(f"Waktu: *{format_display_time(row.get('publishedAt',''))}*")
@@ -1087,7 +1118,6 @@ if trends:
                     st.markdown("---")
 else:
     st.info("🔥 Tidak ada topik yang sering diklik dalam 3 hari terakhir.")
-
 
 
     # ========== (3) PENCARIAN BERITA ==========
