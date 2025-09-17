@@ -2507,5 +2507,17 @@
     "label": 1,
     "clicked_final_score": 0.5667468010070656,
     "clicked_sbert_score": 0.5129026770591736
+  },
+  {
+    "user_id": "user_01",
+    "query": "Erick Thohir",
+    "title": "Erick Thohir Makan Bareng Timnas dan Ngopi Bareng Komite Olimpiade",
+    "url": "https://food.detik.com/foto-kuliner/d-8117148/erick-thohir-makan-bareng-timnas-dan-ngopi-bareng-komite-olimpiade",
+    "source": "Detik",
+    "click_time": "Wednesday, 17 September 2025 21:27",
+    "publishedAt": "2025-09-17 21:00",
+    "label": 1,
+    "clicked_final_score": 0.929647379709139,
+    "clicked_sbert_score": 1.0
   }
 ]
