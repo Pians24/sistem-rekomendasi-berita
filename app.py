@@ -173,6 +173,22 @@ def extract_title_from_article_html(art_soup: BeautifulSoup) -> str:
             if tx: return _clean_title(tx)
     return ""
 
+def filter_today_range(df: pd.DataFrame) -> pd.DataFrame:
+    """Hanya sisakan artikel dengan publishedAt di hari ini (WIB) [00:00, 24:00). 
+    Jika publishedAt tidak bisa diparse -> dibuang."""
+    if df is None or df.empty:
+        return pd.DataFrame()
+    df = df.copy()
+    df["publishedAt_dt"] = pd.to_datetime(df["publishedAt"], errors="coerce")
+
+    start = datetime.now(TZ_JKT).replace(hour=0, minute=0, second=0, microsecond=0)
+    end   = start + timedelta(days=1)
+
+    # buang yang NaT dan yang di luar jendela hari ini
+    m_valid_today = df["publishedAt_dt"].between(start, end, inclusive="left")
+    return df[m_valid_today].copy()
+
+
 # ========================= WAKTU ARTIKEL =========================
 def _has_tz_info(s):
     if not s: return False
@@ -1061,23 +1077,14 @@ trends = trending_by_query_frequency(USER_ID, S.history, days=3)
 if trends:
     q_top, _ = trends[0]
     with st.spinner("Mencari berita..."):
-        # cache_bust setiap 2 menit agar tidak pakai cache lama yang nyelip tanggal non-hari-ini
+        # paksa hasil scrape fresh tiap 2 menit
         df_news = scrape_all_sources(q_top, cache_bust=int(time.time() // 120))
 
     if df_news.empty:
         st.info("❗ Tidak ditemukan berita.")
     else:
-        # Lapis 1 — PRE-FILTER: buang semua yang bukan tanggal hari ini sebelum rekomendasi
-        df_news = filter_today_only(df_news)
-
-        # (Opsional) Debug ringkas: distribusi tanggal sumber mentah
-        with st.expander("🔧 Debug tanggal (sumber sebelum rekomendasi)", expanded=False):
-            if df_news.empty:
-                st.write("Kosong setelah pre-filter (hari ini).")
-            else:
-                tmp = df_news.copy()
-                tmp["date_only"] = pd.to_datetime(tmp["publishedAt"], errors="coerce").dt.date
-                st.write(tmp["date_only"].value_counts(dropna=False).sort_index())
+        # >>> HARD CUTOFF: hanya tanggal HARI INI (WIB) — PRE-FILTER
+        df_news = filter_today_range(df_news)
 
         if df_news.empty:
             st.info("❗ Tidak ada berita bertanggal hari ini untuk topik ini.")
@@ -1090,8 +1097,8 @@ if trends:
                 per_source_group=PER_SOURCE_GROUP,
             )
 
-            # Lapis 2 — POST-FILTER: jaga-jaga setelah rekomendasi
-            results = filter_today_only(results)
+            # >>> JAGA-JAGA: POST-FILTER setelah rekomendasi
+            results = filter_today_range(results)
 
             S.trending_results_df = results.copy()
             S.trending_query = q_top
@@ -1099,16 +1106,7 @@ if trends:
             if results.empty:
                 st.info("❗ Tidak ada berita bertanggal hari ini untuk topik ini.")
             else:
-                # (Opsional) Debug ringkas: distribusi tanggal hasil rekomendasi
-                with st.expander("🔧 Debug tanggal (hasil rekomendasi)", expanded=False):
-                    t2 = results.copy()
-                    t2["date_only"] = pd.to_datetime(t2["publishedAt"], errors="coerce").dt.date
-                    st.write(t2["date_only"].value_counts(dropna=False).sort_index())
-
                 for _, row in results.iterrows():
-                    # Lapis 3 — FILTER SAAT RENDER (baris yang bukan hari ini diskip total)
-                    if not is_today_row(row):
-                        continue
                     src = get_source_from_url(row["url"])
                     st.markdown(f"**[{src}] {row['title']}**")
                     st.write(f"Waktu: *{format_display_time(row.get('publishedAt',''))}*")
