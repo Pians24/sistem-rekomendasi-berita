@@ -1054,25 +1054,18 @@ def main():
                             st.markdown("---")
 
     st.markdown("---")
-
-        # ========== (2) REKOMENDASI BERITA HARI INI ==========
+    # ========== (2) REKOMENDASI BERITA HARI INI ==========
     st.header("🔥 REKOMENDASI BERITA HARI INI")
     trends = trending_by_query_frequency(USER_ID, S.history, days=3)
-
-    def _filter_today(df: pd.DataFrame) -> pd.DataFrame:
-        if df is None or df.empty:
-            return pd.DataFrame()
-        df = df.copy()
-        df["publishedAt"] = df["publishedAt"].astype(str).str.slice(0, 16)
-        today_str = datetime.now(TZ_JKT).strftime("%Y-%m-%d")
-        return df[df["publishedAt"].str.startswith(today_str, na=False)]
 
     if trends:
         q_top, _ = trends[0]
         with st.spinner("Mencari berita..."):
             df_news = scrape_all_sources(q_top, cache_bust=int(time.time() // 120))
 
-        df_news = _filter_today(df_news)
+        # ⬇️ hanya hari ini (WIB) pakai filter ketat
+        df_news = filter_today_range(df_news)
+
         if df_news.empty:
             S.trending_results_df = pd.DataFrame(); S.trending_query = ""
             st.info("❗ Tidak ada berita bertanggal hari ini untuk topik ini.")
@@ -1084,14 +1077,16 @@ def main():
                 use_lr_boost=USE_LR_BOOST, alpha=ALPHA,
                 per_source_group=PER_SOURCE_GROUP,
             )
-            results = _filter_today(results)
 
-            S.trending_results_df = results.copy()
-            S.trending_query = q_top
+            # jaga-jaga, filter lagi hanya hari ini
+            results = filter_today_range(results)
 
             if results.empty:
+                S.trending_results_df = pd.DataFrame(); S.trending_query = ""
                 st.info("❗ Tidak ada berita bertanggal hari ini untuk topik ini.")
             else:
+                S.trending_results_df = results.copy()
+                S.trending_query = q_top
                 for _, row in results.iterrows():
                     src = get_source_from_url(row["url"])
                     st.markdown(f"**[{src}] {row['title']}**")
@@ -1104,7 +1099,6 @@ def main():
         S.trending_results_df = pd.DataFrame(); S.trending_query = ""
         st.info("🔥 Tidak ada topik yang sering diklik dalam 3 hari terakhir.")
 
-    st.markdown("---")
 
     # ========== (3) PENCARIAN BERITA ==========
     st.header("🔍 PENCARIAN BERITA")
