@@ -894,16 +894,24 @@ def filter_today_only(df: pd.DataFrame) -> pd.DataFrame:
     if df is None or df.empty:
         return pd.DataFrame()
     df = df.copy()
-    # parse ke datetime (naive oke karena string sudah di-WIB-kan sebelumnya)
-    df["publishedAt_dt"] = pd.to_datetime(df["publishedAt"], errors="coerce")
-    today = datetime.now(TZ_JKT).date()
-    # 1) via datetime
-    m_dt = df["publishedAt_dt"].dt.date.eq(today)
-    # 2) via string prefix YYYY-MM-DD untuk jaga-jaga parsing gagal
-    today_str = datetime.now(TZ_JKT).strftime("%Y-%m-%d")
-    m_str = df["publishedAt"].astype(str).str.startswith(today_str, na=False)
-    mask = (m_dt.fillna(False) | m_str.fillna(False))
+    mask = df["publishedAt"].astype(str).apply(is_today_wib)
     return df[mask].copy()
+
+def is_today_wib(s: str) -> bool:
+    if not s:
+        return False
+    try:
+        dt = pd.to_datetime(s, errors="coerce")
+        if pd.isna(dt):
+            return False
+        # pastikan aware WIB buat perbandingan yang konsisten
+        if dt.tzinfo is None:
+            dt = TZ_JKT.localize(dt)
+        else:
+            dt = dt.tz_convert(TZ_JKT)
+        return dt.date() == datetime.now(TZ_JKT).date()
+    except Exception:
+        return False
 
 # ============= SKOR ULANG (BACKFILL) UNTUK ENTRI LAMA TANPA SKOR =============
 def compute_score_for_history_item(query: str, title: str, description: str = "", content: str = "", clf=None):
@@ -1088,7 +1096,10 @@ def main():
             else:
                 S.trending_results_df = results.copy()
                 S.trending_query = q_top
+
                 for _, row in results.iterrows():
+                    if not is_today_wib(str(row.get("publishedAt", ""))):
+                        continue
                     src = get_source_from_url(row["url"])
                     st.markdown(f"**[{src}] {row['title']}**")
                     st.write(f"Waktu: *{format_display_time(row.get('publishedAt',''))}*")
