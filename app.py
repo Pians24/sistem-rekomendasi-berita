@@ -904,21 +904,6 @@ def filter_today_only(df: pd.DataFrame) -> pd.DataFrame:
     mask = (m_dt.fillna(False) | m_str.fillna(False))
     return df[mask].copy()
 
-# ---- Helper: cek per-baris saat render (lapis ke-3) ----
-def is_today_row(row) -> bool:
-    today = datetime.now(TZ_JKT).date()
-    # cek kolom dt kalau ada
-    try:
-        dt = pd.to_datetime(row.get("publishedAt"), errors="coerce")
-        if pd.notna(dt) and dt.date() == today:
-            return True
-    except Exception:
-        pass
-    # cek string prefix
-    today_str = datetime.now(TZ_JKT).strftime("%Y-%m-%d")
-    return str(row.get("publishedAt", "")).startswith(today_str)
-)
-
 # ============= SKOR ULANG (BACKFILL) UNTUK ENTRI LAMA TANPA SKOR =============
 def compute_score_for_history_item(query: str, title: str, description: str = "", content: str = "", clf=None):
     txt = preprocess_text(f"{title} {description} {content}")
