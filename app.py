@@ -886,25 +886,6 @@ def compute_score_for_history_item(query: str, title: str, description: str = ""
         final = sbert
     return float(final), float(sbert)
 
-
-# ========================= FILTER HARI INI =========================
-def filter_today_only(df: pd.DataFrame) -> pd.DataFrame:
-    """Filter dataframe artikel agar hanya tanggal hari ini (zona Asia/Jakarta)."""
-    if df is None or df.empty:
-        return pd.DataFrame()
-    if "publishedAt_dt" not in df.columns:
-        try:
-            df = df.copy()
-            df["publishedAt_dt"] = pd.to_datetime(df["publishedAt"], errors="coerce")
-        except Exception:
-            return pd.DataFrame()
-    today = datetime.now(TZ_JKT).date()
-    try:
-        return df[df["publishedAt_dt"].dt.date == today].copy()
-    except Exception:
-        return pd.DataFrame()
-
-
 # ========================= TOMBOL BACA =========================
 def render_read_button(url: str, query: str, row_dict: dict, label: str = "Baca selengkapnya", ctx: str = "default"):
     btn_key = make_ui_key(f"btn.{ctx}", url, query)
@@ -1040,50 +1021,48 @@ def main():
 
     st.markdown("---")
 
-# ========== (2) REKOMENDASI BERITA HARI INI ==========
-st.header("🔥 REKOMENDASI BERITA HARI INI")
-trends = trending_by_query_frequency(USER_ID, S.history, days=3)
-if trends:
-    q_top, _ = trends[0]
-    with st.spinner("Mencari berita..."):
-        df_news = scrape_all_sources(q_top)
-    if df_news.empty:
-        st.info("❗ Tidak ditemukan berita.")
-    else:
-        results = recommend(
-            df_news, q_top, clf,
-            n_per_source=1,
-            min_score=DEFAULT_MIN_SCORE,
-            use_lr_boost=USE_LR_BOOST, alpha=ALPHA,
-            per_source_group=PER_SOURCE_GROUP,
-        )
-        # 🆕 filter hanya berita hari ini
-        results = filter_today_only(results)
-        S.trending_results_df = results.copy()
-        S.trending_query = q_top
-        if results.empty:
-            st.info("❗ Tidak ada berita bertanggal hari ini.")
+    # ========== (2) REKOMENDASI BERITA HARI INI ==========
+    st.header("🔥 REKOMENDASI BERITA HARI INI")
+    trends = trending_by_query_frequency(USER_ID, S.history, days=3)
+    if trends:
+        q_top, _ = trends[0]
+        with st.spinner("Mencari berita..."):
+            df_news = scrape_all_sources(q_top)
+        if df_news.empty:
+            st.info("❗ Tidak ditemukan berita.")
         else:
-            for _, row in results.iterrows():
-                src = get_source_from_url(row["url"])
-                st.markdown(f"**[{src}] {row['title']}**")
-                st.write(f"Waktu: *{format_display_time(row.get('publishedAt',''))}*")
-                skor = row.get("final_score", row.get("sbert_score", 0.0))
-                render_score_badge(skor)
-                render_read_button(row["url"], q_top, row.to_dict(), ctx="trending")
-                st.markdown("---")
-else:
-    st.info("🔥 Tidak ada topik yang sering diklik dalam 3 hari terakhir.")
+            results = recommend(
+                df_news, q_top, clf,
+                n_per_source=1,
+                min_score=DEFAULT_MIN_SCORE,
+                use_lr_boost=USE_LR_BOOST, alpha=ALPHA,
+                per_source_group=PER_SOURCE_GROUP,
+            )
+            S.trending_results_df = results.copy()
+            S.trending_query = q_top
+            if results.empty:
+                st.info("❗ Tidak ada hasil relevan.")
+            else:
+                for _, row in results.iterrows():
+                    src = get_source_from_url(row["url"])
+                    st.markdown(f"**[{src}] {row['title']}**")
+                    st.write(f"Waktu: *{format_display_time(row.get('publishedAt',''))}*")
+                    skor = row.get("final_score", row.get("sbert_score", 0.0))
+                    render_score_badge(skor)
+                    render_read_button(row["url"], q_top, row.to_dict(), ctx="trending")
+                    st.markdown("---")
+    else:
+        st.info("🔥 Tidak ada topik yang sering diklik dalam 3 hari terakhir.")
 
+    st.markdown("---")
 
     # ========== (3) PENCARIAN BERITA ==========
     st.header("🔍 PENCARIAN BERITA")
     with st.form(key="search_form", clear_on_submit=False):
-        search_query = st.text_input("Ketik topik berita yang ingin Anda cari:", key="search_query_input")
+        search_query = st.text_input("Ketik topik berita yang ingin Anda cari:", value=S.current_query)
         submitted = st.form_submit_button("Cari Berita")
 
     if submitted:
-        search_query = st.session_state.get("search_query_input", "").strip()
         if search_query:
             with st.spinner("Mengambil berita dan merekomendasikan..."):
                 S.current_search_results = scrape_all_sources(search_query)
