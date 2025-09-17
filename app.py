@@ -913,6 +913,30 @@ def is_today_wib(s: str) -> bool:
     except Exception:
         return False
 
+def keep_today_strict(df: pd.DataFrame) -> pd.DataFrame:
+    if df is None or df.empty:
+        return pd.DataFrame()
+    df = df.copy()
+
+    def to_wib_dt(x):
+        try:
+            dt = pd.to_datetime(str(x), errors="coerce")
+            if pd.isna(dt):
+                return pd.NaT
+            if dt.tzinfo is None:
+                dt = TZ_JKT.localize(dt)
+            else:
+                dt = dt.tz_convert(TZ_JKT)
+            return dt
+        except Exception:
+            return pd.NaT
+
+    df["__wib_dt"] = df["publishedAt"].apply(to_wib_dt)
+    today = datetime.now(TZ_JKT).date()
+    df = df[df["__wib_dt"].dt.date == today].copy()
+    return df.drop(columns=["__wib_dt"])
+
+
 # ============= SKOR ULANG (BACKFILL) UNTUK ENTRI LAMA TANPA SKOR =============
 def compute_score_for_history_item(query: str, title: str, description: str = "", content: str = "", clf=None):
     txt = preprocess_text(f"{title} {description} {content}")
@@ -1073,7 +1097,7 @@ def main():
         with st.spinner("Mencari berita..."):
             df_news = scrape_all_sources(q_top, cache_bust=int(time.time() // 120))
 
-        df_news = filter_today_only(df_news)
+        df_news = keep_today_strict(df_news)
 
         if df_news.empty:
             S.trending_results_df = pd.DataFrame(); S.trending_query = ""
@@ -1088,7 +1112,7 @@ def main():
             )
 
             # jaga-jaga, filter lagi hanya hari ini
-            results = filter_today_only(results)
+            results = keep_today_strict(results)
 
             if results.empty:
                 S.trending_results_df = pd.DataFrame(); S.trending_query = ""
@@ -1098,8 +1122,16 @@ def main():
                 S.trending_query = q_top
 
                 for _, row in results.iterrows():
-                    if not is_today_wib(str(row.get("publishedAt", ""))):
+                    dt_ok = pd.to_datetime(str(row.get("publishedAt","")), errors="coerce")
+                    if pd.isna(dt_ok):
                         continue
+                    if dt_ok.tzinfo is None:
+                        dt_ok = TZ_JKT.localize(dt_ok)
+                    else:
+                        dt_ok = dt_ok.tz_convert(TZ_JKT)
+                    if dt_ok.date() != datetime.now(TZ_JKT).date():
+                        continue
+
                     src = get_source_from_url(row["url"])
                     st.markdown(f"**[{src}] {row['title']}**")
                     st.write(f"Waktu: *{format_display_time(row.get('publishedAt',''))}*")
