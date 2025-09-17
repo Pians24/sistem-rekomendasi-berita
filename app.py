@@ -173,22 +173,6 @@ def extract_title_from_article_html(art_soup: BeautifulSoup) -> str:
             if tx: return _clean_title(tx)
     return ""
 
-def filter_today_range(df: pd.DataFrame) -> pd.DataFrame:
-    """Hanya sisakan artikel dengan publishedAt di hari ini (WIB) [00:00, 24:00). 
-    Jika publishedAt tidak bisa diparse -> dibuang."""
-    if df is None or df.empty:
-        return pd.DataFrame()
-    df = df.copy()
-    df["publishedAt_dt"] = pd.to_datetime(df["publishedAt"], errors="coerce")
-
-    start = datetime.now(TZ_JKT).replace(hour=0, minute=0, second=0, microsecond=0)
-    end   = start + timedelta(days=1)
-
-    # buang yang NaT dan yang di luar jendela hari ini
-    m_valid_today = df["publishedAt_dt"].between(start, end, inclusive="left")
-    return df[m_valid_today].copy()
-
-
 # ========================= WAKTU ARTIKEL =========================
 def _has_tz_info(s):
     if not s: return False
@@ -554,15 +538,13 @@ def scrape_kompas_fixed(query, max_articles=12):
     return pd.DataFrame(data).drop_duplicates(subset=["url"]) if data else pd.DataFrame()
 
 @st.cache_data(ttl=300)
-def scrape_all_sources(query, cache_bust: int | None = None):
-    # 'cache_bust' hanya untuk mengubah signature cache agar fetch baru; tidak dipakai di body.
+def scrape_all_sources(query):
     dfs = []
     d1 = scrape_detik(query);  d2 = scrape_cnn_fixed(query); d3 = scrape_kompas_fixed(query)
     if not d1.empty: dfs.append(d1)
     if not d2.empty: dfs.append(d2)
     if not d3.empty: dfs.append(d3)
     return pd.concat(dfs, ignore_index=True) if dfs else pd.DataFrame()
-
 
 # ========================= GITHUB HISTORY (robust) =========================
 import os
@@ -758,7 +740,7 @@ def get_recent_queries_by_days(user_id, df, days=3):
             d["ts"] = d["ts"].dt.tz_convert(TZ_JKT)
     except Exception:
         d["ts"] = pd.to_datetime(d["ts"], errors="coerce").dt.tz_localize(TZ_JKT, nonexistent="NaT", ambiguous="NaT")
-    cutoff = datetime.now(TZ_JKT) - timedelta(days=3)
+    cutoff = datetime.now(TZ_JKT) - timedelta(days=days)
     d = d[d["ts"] >= cutoff]
     if d.empty: return {}
     d["date"] = d["ts"].dt.strftime("%d %B %Y")
@@ -781,7 +763,7 @@ def trending_by_query_frequency(user_id, df, days=3):
             d["ts"] = d["ts"].dt.tz_convert(TZ_JKT)
     except Exception:
         d["ts"] = pd.to_datetime(d["ts"], errors="coerce").dt.tz_localize(TZ_JKT, nonexistent="NaT", ambiguous="NaT")
-    cutoff = datetime.now(TZ_JKT) - timedelta(days=3)
+    cutoff = datetime.now(TZ_JKT) - timedelta(days=days)
     d = d[d["ts"] >= cutoff]
     if d.empty:
         return []
@@ -842,7 +824,6 @@ def recommend(
     use_lr_boost=True,
     alpha=0.25,
     per_source_group=True
-    only_today=True,
 ):
     """Rekomendasi artikel dengan filter tanggal sebelum embedding + blend skor."""
     if df.empty:
@@ -1039,22 +1020,16 @@ def main():
                             st.markdown("---")
 
     st.markdown("---")
-    
+
     # ========== (2) REKOMENDASI BERITA HARI INI ==========
     st.header("🔥 REKOMENDASI BERITA HARI INI")
     trends = trending_by_query_frequency(USER_ID, S.history, days=3)
-
     if trends:
         q_top, _ = trends[0]
         with st.spinner("Mencari berita..."):
-            df_news = scrape_all_sources(q_top, cache_bust=int(time.time() // 120))
-
-        today_str = datetime.now(TZ_JKT).strftime("%Y-%m-%d")
-        df_news = df_news[df_news["publishedAt"].astype(str).str.startswith(today_str, na=False)]
-
+            df_news = scrape_all_sources(q_top)
         if df_news.empty:
-            S.trending_results_df = pd.DataFrame(); S.trending_query = ""
-            st.info("❗ Tidak ada berita bertanggal hari ini untuk topik ini.")
+            st.info("❗ Tidak ditemukan berita.")
         else:
             results = recommend(
                 df_news, q_top, clf,
@@ -1063,17 +1038,11 @@ def main():
                 use_lr_boost=USE_LR_BOOST, alpha=ALPHA,
                 per_source_group=PER_SOURCE_GROUP,
             )
-
-            # Filter ulang lagi setelah rekomendasi (jaga-jaga)
-            results = results[results["publishedAt"].astype(str).str.startswith(today_str, na=False)]
-
+            S.trending_results_df = results.copy()
+            S.trending_query = q_top
             if results.empty:
-                S.trending_results_df = pd.DataFrame(); S.trending_query = ""
-                st.info("❗ Tidak ada berita bertanggal hari ini untuk topik ini.")
+                st.info("❗ Tidak ada hasil relevan.")
             else:
-                S.trending_results_df = results.copy()
-                S.trending_query = q_top
-
                 for _, row in results.iterrows():
                     src = get_source_from_url(row["url"])
                     st.markdown(f"**[{src}] {row['title']}**")
@@ -1083,20 +1052,17 @@ def main():
                     render_read_button(row["url"], q_top, row.to_dict(), ctx="trending")
                     st.markdown("---")
     else:
-        S.trending_results_df = pd.DataFrame(); S.trending_query = ""
         st.info("🔥 Tidak ada topik yang sering diklik dalam 3 hari terakhir.")
 
+    st.markdown("---")
 
     # ========== (3) PENCARIAN BERITA ==========
     st.header("🔍 PENCARIAN BERITA")
     with st.form(key="search_form", clear_on_submit=False):
-        # ⬇️ gunakan state key agar selalu ambil input terbaru, bukan value lama
-        search_query = st.text_input("Ketik topik berita yang ingin Anda cari:", key="search_query_input")
+        search_query = st.text_input("Ketik topik berita yang ingin Anda cari:", value=S.current_query)
         submitted = st.form_submit_button("Cari Berita")
 
     if submitted:
-        # pastikan pakai nilai terakhir dari input
-        search_query = (st.session_state.get("search_query_input") or "").strip()
         if search_query:
             with st.spinner("Mengambil berita dan merekomendasikan..."):
                 S.current_search_results = scrape_all_sources(search_query)
