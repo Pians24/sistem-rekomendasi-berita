@@ -1047,13 +1047,14 @@ def main():
                 use_lr_boost=USE_LR_BOOST, alpha=ALPHA,
                 per_source_group=PER_SOURCE_GROUP,
             )
-            # ⬇️ hanya tampilkan berita tanggal hari ini (WIB)
+
+            # ✅ filter hanya artikel bertanggal hari ini
             results = filter_today_only(results)
 
             S.trending_results_df = results.copy()
             S.trending_query = q_top
             if results.empty:
-                st.info(f"❗ Tidak ada berita bertanggal {datetime.now(TZ_JKT).strftime('%Y-%m-%d')} untuk topik '{q_top}'.")
+                st.info("❗ Tidak ada berita bertanggal hari ini untuk topik ini.")
             else:
                 for _, row in results.iterrows():
                     src = get_source_from_url(row["url"])
@@ -1065,8 +1066,6 @@ def main():
                     st.markdown("---")
     else:
         st.info("🔥 Tidak ada topik yang sering diklik dalam 3 hari terakhir.")
-
-    st.markdown("---")
 
     # ========== (3) PENCARIAN BERITA ==========
     st.header("🔍 PENCARIAN BERITA")
