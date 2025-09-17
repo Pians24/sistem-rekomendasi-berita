@@ -842,6 +842,7 @@ def recommend(
     use_lr_boost=True,
     alpha=0.25,
     per_source_group=True
+    only_today=True,
 ):
     """Rekomendasi artikel dengan filter tanggal sebelum embedding + blend skor."""
     if df.empty:
