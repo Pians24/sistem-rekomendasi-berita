@@ -740,7 +740,7 @@ def get_recent_queries_by_days(user_id, df, days=3):
             d["ts"] = d["ts"].dt.tz_convert(TZ_JKT)
     except Exception:
         d["ts"] = pd.to_datetime(d["ts"], errors="coerce").dt.tz_localize(TZ_JKT, nonexistent="NaT", ambiguous="NaT")
-    cutoff = datetime.now(TZ_JKT) - timedelta(days=days)
+    cutoff = datetime.now(TZ_JKT) - timedelta(days=3)
     d = d[d["ts"] >= cutoff]
     if d.empty: return {}
     d["date"] = d["ts"].dt.strftime("%d %B %Y")
@@ -763,7 +763,7 @@ def trending_by_query_frequency(user_id, df, days=3):
             d["ts"] = d["ts"].dt.tz_convert(TZ_JKT)
     except Exception:
         d["ts"] = pd.to_datetime(d["ts"], errors="coerce").dt.tz_localize(TZ_JKT, nonexistent="NaT", ambiguous="NaT")
-    cutoff = datetime.now(TZ_JKT) - timedelta(days=days)
+    cutoff = datetime.now(TZ_JKT) - timedelta(days=3)
     d = d[d["ts"] >= cutoff]
     if d.empty:
         return []
@@ -869,6 +869,15 @@ def recommend(
         got = filtered.sort_values(["publishedAt_dt", "final_score"], ascending=[False, False]).head(3 * n_per_source)
 
     return got.sort_values(["publishedAt_dt", "final_score"], ascending=[False, False]).reset_index(drop=True)
+
+# ---- Helper: hanya berita tanggal hari ini (WIB) ----
+def filter_today_only(df: pd.DataFrame) -> pd.DataFrame:
+    if df is None or df.empty:
+        return pd.DataFrame()
+    if "publishedAt_dt" not in df.columns:
+        return pd.DataFrame()
+    today = datetime.now(TZ_JKT).date()
+    return df[df["publishedAt_dt"].dt.date == today].copy()
 
 # ============= SKOR ULANG (BACKFILL) UNTUK ENTRI LAMA TANPA SKOR =============
 def compute_score_for_history_item(query: str, title: str, description: str = "", content: str = "", clf=None):
@@ -1038,10 +1047,13 @@ def main():
                 use_lr_boost=USE_LR_BOOST, alpha=ALPHA,
                 per_source_group=PER_SOURCE_GROUP,
             )
+            # ⬇️ hanya tampilkan berita tanggal hari ini (WIB)
+            results = filter_today_only(results)
+
             S.trending_results_df = results.copy()
             S.trending_query = q_top
             if results.empty:
-                st.info("❗ Tidak ada hasil relevan.")
+                st.info(f"❗ Tidak ada berita bertanggal {datetime.now(TZ_JKT).strftime('%Y-%m-%d')} untuk topik '{q_top}'.")
             else:
                 for _, row in results.iterrows():
                     src = get_source_from_url(row["url"])
@@ -1059,10 +1071,13 @@ def main():
     # ========== (3) PENCARIAN BERITA ==========
     st.header("🔍 PENCARIAN BERITA")
     with st.form(key="search_form", clear_on_submit=False):
-        search_query = st.text_input("Ketik topik berita yang ingin Anda cari:", value=S.current_query)
+        # ⬇️ gunakan state key agar selalu ambil input terbaru, bukan value lama
+        search_query = st.text_input("Ketik topik berita yang ingin Anda cari:", key="search_query_input")
         submitted = st.form_submit_button("Cari Berita")
 
     if submitted:
+        # pastikan pakai nilai terakhir dari input
+        search_query = (st.session_state.get("search_query_input") or "").strip()
         if search_query:
             with st.spinner("Mengambil berita dan merekomendasikan..."):
                 S.current_search_results = scrape_all_sources(search_query)
