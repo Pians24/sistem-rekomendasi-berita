@@ -538,13 +538,15 @@ def scrape_kompas_fixed(query, max_articles=12):
     return pd.DataFrame(data).drop_duplicates(subset=["url"]) if data else pd.DataFrame()
 
 @st.cache_data(ttl=300)
-def scrape_all_sources(query):
+def scrape_all_sources(query, cache_bust: int | None = None):
+    # 'cache_bust' tidak dipakai, cukup ada agar kunci cache berubah
     dfs = []
     d1 = scrape_detik(query);  d2 = scrape_cnn_fixed(query); d3 = scrape_kompas_fixed(query)
     if not d1.empty: dfs.append(d1)
     if not d2.empty: dfs.append(d2)
     if not d3.empty: dfs.append(d3)
     return pd.concat(dfs, ignore_index=True) if dfs else pd.DataFrame()
+
 
 # ========================= GITHUB HISTORY (robust) =========================
 import os
@@ -875,9 +877,19 @@ def filter_today_only(df: pd.DataFrame) -> pd.DataFrame:
     if df is None or df.empty:
         return pd.DataFrame()
     df = df.copy()
+    # 1) via datetime
     df["publishedAt_dt"] = pd.to_datetime(df["publishedAt"], errors="coerce")
     today = datetime.now(TZ_JKT).date()
-    return df[df["publishedAt_dt"].dt.date == today].copy()
+    m_dt = df["publishedAt_dt"].dt.date == today
+
+    # 2) via string prefix YYYY-MM-DD (buat jaga-jaga parsing gagal)
+    today_str = datetime.now(TZ_JKT).strftime("%Y-%m-%d")
+    m_str = df["publishedAt"].astype(str).str.startswith(today_str, na=False)
+
+    # gabungkan (kalau salah satu true, lolos)
+    mask = m_dt.fillna(False) | m_str.fillna(False)
+    return df[mask].copy()
+
 
 # ============= SKOR ULANG (BACKFILL) UNTUK ENTRI LAMA TANPA SKOR =============
 def compute_score_for_history_item(query: str, title: str, description: str = "", content: str = "", clf=None):
@@ -1037,12 +1049,12 @@ trends = trending_by_query_frequency(USER_ID, S.history, days=3)
 if trends:
     q_top, _ = trends[0]
     with st.spinner("Mencari berita..."):
-        df_news = scrape_all_sources(q_top)
+        df_news = scrape_all_sources(q_top, cache_bust=int(time.time() // 120))  # <- paksa fresh
 
     if df_news.empty:
         st.info("❗ Tidak ditemukan berita.")
     else:
-        # >>> BUANG SEMUA YANG BUKAN TANGGAL HARI INI (WIB) — PRE-FILTER
+        # PRE-FILTER: hanya hari ini
         df_news = filter_today_only(df_news)
 
         if df_news.empty:
@@ -1056,7 +1068,7 @@ if trends:
                 per_source_group=PER_SOURCE_GROUP,
             )
 
-            # >>> JAGA-JAGA: FILTER LAGI SETELAH REKOMENDASI — POST-FILTER
+            # POST-FILTER: jaga-jaga
             results = filter_today_only(results)
 
             S.trending_results_df = results.copy()
@@ -1075,6 +1087,7 @@ if trends:
                     st.markdown("---")
 else:
     st.info("🔥 Tidak ada topik yang sering diklik dalam 3 hari terakhir.")
+
 
 
     # ========== (3) PENCARIAN BERITA ==========
