@@ -874,8 +874,8 @@ def recommend(
 def filter_today_only(df: pd.DataFrame) -> pd.DataFrame:
     if df is None or df.empty:
         return pd.DataFrame()
-    if "publishedAt_dt" not in df.columns:
-        return pd.DataFrame()
+    df = df.copy()
+    df["publishedAt_dt"] = pd.to_datetime(df["publishedAt"], errors="coerce")
     today = datetime.now(TZ_JKT).date()
     return df[df["publishedAt_dt"].dt.date == today].copy()
 
@@ -1030,15 +1030,23 @@ def main():
 
     st.markdown("---")
 
-    # ========== (2) REKOMENDASI BERITA HARI INI ==========
-    st.header("🔥 REKOMENDASI BERITA HARI INI")
-    trends = trending_by_query_frequency(USER_ID, S.history, days=3)
-    if trends:
-        q_top, _ = trends[0]
-        with st.spinner("Mencari berita..."):
-            df_news = scrape_all_sources(q_top)
+    
+# ========== (2) REKOMENDASI BERITA HARI INI ==========
+st.header("🔥 REKOMENDASI BERITA HARI INI")
+trends = trending_by_query_frequency(USER_ID, S.history, days=3)
+if trends:
+    q_top, _ = trends[0]
+    with st.spinner("Mencari berita..."):
+        df_news = scrape_all_sources(q_top)
+
+    if df_news.empty:
+        st.info("❗ Tidak ditemukan berita.")
+    else:
+        # >>> BUANG SEMUA YANG BUKAN TANGGAL HARI INI (WIB) — PRE-FILTER
+        df_news = filter_today_only(df_news)
+
         if df_news.empty:
-            st.info("❗ Tidak ditemukan berita.")
+            st.info("❗ Tidak ada berita bertanggal hari ini untuk topik ini.")
         else:
             results = recommend(
                 df_news, q_top, clf,
@@ -1048,11 +1056,12 @@ def main():
                 per_source_group=PER_SOURCE_GROUP,
             )
 
-            # ✅ filter hanya artikel bertanggal hari ini
+            # >>> JAGA-JAGA: FILTER LAGI SETELAH REKOMENDASI — POST-FILTER
             results = filter_today_only(results)
 
             S.trending_results_df = results.copy()
             S.trending_query = q_top
+
             if results.empty:
                 st.info("❗ Tidak ada berita bertanggal hari ini untuk topik ini.")
             else:
@@ -1064,8 +1073,9 @@ def main():
                     render_score_badge(skor)
                     render_read_button(row["url"], q_top, row.to_dict(), ctx="trending")
                     st.markdown("---")
-    else:
-        st.info("🔥 Tidak ada topik yang sering diklik dalam 3 hari terakhir.")
+else:
+    st.info("🔥 Tidak ada topik yang sering diklik dalam 3 hari terakhir.")
+
 
     # ========== (3) PENCARIAN BERITA ==========
     st.header("🔍 PENCARIAN BERITA")
