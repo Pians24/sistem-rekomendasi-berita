@@ -1054,6 +1054,7 @@ def main():
                             st.markdown("---")
 
     st.markdown("---")
+    
     # ========== (2) REKOMENDASI BERITA HARI INI ==========
     st.header("🔥 REKOMENDASI BERITA HARI INI")
     trends = trending_by_query_frequency(USER_ID, S.history, days=3)
@@ -1063,8 +1064,7 @@ def main():
         with st.spinner("Mencari berita..."):
             df_news = scrape_all_sources(q_top, cache_bust=int(time.time() // 120))
 
-        # ⬇️ hanya hari ini (WIB) pakai filter ketat
-        df_news = filter_today_range(df_news)
+        df_news = filter_today_only(df_news)
 
         if df_news.empty:
             S.trending_results_df = pd.DataFrame(); S.trending_query = ""
@@ -1079,7 +1079,7 @@ def main():
             )
 
             # jaga-jaga, filter lagi hanya hari ini
-            results = filter_today_range(results)
+            results = filter_today_only(results)
 
             if results.empty:
                 S.trending_results_df = pd.DataFrame(); S.trending_query = ""
