@@ -1069,76 +1069,54 @@ def main():
                             st.markdown("---")
 
     st.markdown("---")
-    
-    # ========== (2) REKOMENDASI BERITA HARI INI ==========
+
+        # ========== (2) REKOMENDASI BERITA HARI INI ==========
     st.header("🔥 REKOMENDASI BERITA HARI INI")
     trends = trending_by_query_frequency(USER_ID, S.history, days=3)
+
+    def _filter_today(df: pd.DataFrame) -> pd.DataFrame:
+        if df is None or df.empty:
+            return pd.DataFrame()
+        df = df.copy()
+        df["publishedAt"] = df["publishedAt"].astype(str).str.slice(0, 16)
+        today_str = datetime.now(TZ_JKT).strftime("%Y-%m-%d")
+        return df[df["publishedAt"].str.startswith(today_str, na=False)]
 
     if trends:
         q_top, _ = trends[0]
         with st.spinner("Mencari berita..."):
-            # paksa hasil scrape fresh tiap 2 menit
             df_news = scrape_all_sources(q_top, cache_bust=int(time.time() // 120))
 
+        df_news = _filter_today(df_news)
         if df_news.empty:
-            S.trending_results_df = pd.DataFrame()
-            S.trending_query = ""
-            st.info("❗ Tidak ditemukan berita.")
+            S.trending_results_df = pd.DataFrame(); S.trending_query = ""
+            st.info("❗ Tidak ada berita bertanggal hari ini untuk topik ini.")
         else:
-            # Normalisasi string waktu ke 'YYYY-MM-DD HH:MM' (jaga-jaga ada detik)
-            df_news = df_news.copy()
-            df_news["publishedAt"] = df_news["publishedAt"].astype(str).str.slice(0, 16)
+            results = recommend(
+                df_news, q_top, clf,
+                n_per_source=1,
+                min_score=DEFAULT_MIN_SCORE,
+                use_lr_boost=USE_LR_BOOST, alpha=ALPHA,
+                per_source_group=PER_SOURCE_GROUP,
+            )
+            results = _filter_today(results)
 
-            # HANYA tanggal HARI INI (WIB) — PRE-FILTER
-            def _filter_today(df: pd.DataFrame) -> pd.DataFrame:
-                if df is None or df.empty:
-                    return pd.DataFrame()
-                df = df.copy()
-                # parse -> tz-naive; bandingkan pakai prefix string biar konsisten dgn WIB yang sudah dinormalisasi
-                today_str = datetime.now(TZ_JKT).strftime("%Y-%m-%d")
-                return df[df["publishedAt"].astype(str).str.startswith(today_str, na=False)].copy()
+            S.trending_results_df = results.copy()
+            S.trending_query = q_top
 
-            df_news = _filter_today(df_news)
-
-            if df_news.empty:
-                S.trending_results_df = pd.DataFrame()
-                S.trending_query = ""
+            if results.empty:
                 st.info("❗ Tidak ada berita bertanggal hari ini untuk topik ini.")
             else:
-                results = recommend(
-                    df_news, q_top, clf,
-                    n_per_source=1,
-                    min_score=DEFAULT_MIN_SCORE,
-                    use_lr_boost=USE_LR_BOOST, alpha=ALPHA,
-                    per_source_group=PER_SOURCE_GROUP,
-                )
-
-                # POST-FILTER (jaga-jaga setelah scoring)
-                results = _filter_today(results)
-
-                # HARD GUARD sebelum render
-                today_str = datetime.now(TZ_JKT).strftime("%Y-%m-%d")
-                results = results[results["publishedAt"].astype(str).str.startswith(today_str, na=False)]
-
-                S.trending_results_df = results.copy()
-                S.trending_query = q_top
-
-                if results.empty:
-                    S.trending_results_df = pd.DataFrame()
-                    S.trending_query = ""
-                    st.info("❗ Tidak ada berita bertanggal hari ini untuk topik ini.")
-                else:
-                    for _, row in results.iterrows():
-                        src = get_source_from_url(row["url"])
-                        st.markdown(f"**[{src}] {row['title']}**")
-                        st.write(f"Waktu: *{format_display_time(row.get('publishedAt',''))}*")
-                        skor = row.get("final_score", row.get("sbert_score", 0.0))
-                        render_score_badge(skor)
-                        render_read_button(row["url"], q_top, row.to_dict(), ctx="trending")
-                        st.markdown("---")
+                for _, row in results.iterrows():
+                    src = get_source_from_url(row["url"])
+                    st.markdown(f"**[{src}] {row['title']}**")
+                    st.write(f"Waktu: *{format_display_time(row.get('publishedAt',''))}*")
+                    skor = row.get("final_score", row.get("sbert_score", 0.0))
+                    render_score_badge(skor)
+                    render_read_button(row["url"], q_top, row.to_dict(), ctx="trending")
+                    st.markdown("---")
     else:
-        S.trending_results_df = pd.DataFrame()
-        S.trending_query = ""
+        S.trending_results_df = pd.DataFrame(); S.trending_query = ""
         st.info("🔥 Tidak ada topik yang sering diklik dalam 3 hari terakhir.")
 
     st.markdown("---")
