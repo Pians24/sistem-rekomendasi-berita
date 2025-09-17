@@ -2555,5 +2555,17 @@
     "label": 1,
     "clicked_final_score": 0.5667468010070656,
     "clicked_sbert_score": 0.5129026770591736
+  },
+  {
+    "user_id": "user_01",
+    "query": "Erick Thohir",
+    "title": "Erick Thohir Dinilai Tepat Memimpin Kemenpora, Ini Alasan Pengamat Olahraga",
+    "url": "https://www.kompas.com/sulawesi-selatan/read/2025/09/17/200000888/erick-thohir-dinilai-tepat-memimpin-kemenpora-ini-alasan",
+    "source": "Kompas",
+    "click_time": "Wednesday, 17 September 2025 21:39",
+    "publishedAt": "2025-09-17 20:00",
+    "label": 1,
+    "clicked_final_score": 0.6946852209814686,
+    "clicked_sbert_score": 0.6948033571243286
   }
 ]
