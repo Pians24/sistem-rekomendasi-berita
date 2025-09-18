@@ -2591,5 +2591,17 @@
     "label": 1,
     "clicked_final_score": 0.704675920822424,
     "clicked_sbert_score": 0.7096495628356934
+  },
+  {
+    "user_id": "user_01",
+    "query": "Purbaya",
+    "title": "Menkeu Purbaya Bilang Tutut Soeharto Cabut Gugatan PTUN, Endingnya Kirim Salam",
+    "url": "https://www.detik.com/jogja/berita/d-8118892/menkeu-purbaya-bilang-tutut-soeharto-cabut-gugatan-ptun-endingnya-kirim-salam",
+    "source": "Detik",
+    "click_time": "Thursday, 18 September 2025 23:20",
+    "publishedAt": "2025-09-18 18:02",
+    "label": 1,
+    "clicked_final_score": 0.6138070756042531,
+    "clicked_sbert_score": 0.5921439528465271
   }
 ]
