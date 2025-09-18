@@ -2603,5 +2603,17 @@
     "label": 1,
     "clicked_final_score": 0.6138070756042531,
     "clicked_sbert_score": 0.5921439528465271
+  },
+  {
+    "user_id": "user_01",
+    "query": "Purbaya",
+    "title": "Soal Gugatan Tutut Soeharto, Menkeu Purbaya: Sudah Dicabut",
+    "url": "https://money.kompas.com/read/2025/09/18/162051126/soal-gugatan-tutut-soeharto-menkeu-purbaya-sudah-dicabut",
+    "source": "Kompas",
+    "click_time": "Thursday, 18 September 2025 23:20",
+    "publishedAt": "2025-09-18 16:20",
+    "label": 1,
+    "clicked_final_score": 0.5791034259093493,
+    "clicked_sbert_score": 0.5465174317359924
   }
 ]
