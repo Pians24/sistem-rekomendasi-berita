@@ -2579,5 +2579,17 @@
     "label": 1,
     "clicked_final_score": 0.5897409956532305,
     "clicked_sbert_score": 0.562432587146759
+  },
+  {
+    "user_id": "user_01",
+    "query": "Purbaya",
+    "title": "DPR Desak Purbaya Anggarkan Duit Buat Bansos Minyak Goreng 2 Liter",
+    "url": "https://www.cnnindonesia.com/ekonomi/20250918162907-532-1275155/dpr-desak-purbaya-anggarkan-duit-buat-bansos-minyak-goreng-2-liter",
+    "source": "CNN",
+    "click_time": "Thursday, 18 September 2025 23:19",
+    "publishedAt": "2025-09-18 18:52",
+    "label": 1,
+    "clicked_final_score": 0.704675920822424,
+    "clicked_sbert_score": 0.7096495628356934
   }
 ]
